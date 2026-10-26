@@ -1,0 +1,140 @@
+// Szakaszidő – ranglista API (Netlify Functions + Netlify Blobs)
+import { getStore } from "@netlify/blobs";
+import { createHash, timingSafeEqual } from "node:crypto";
+
+// Szakaszok: hossz (m) és a cél helye a játék koordinátáiban (a rajt a 0,0 pont)
+const STAGES = {"r_iklad": {"len": 2174, "end": [1097.7, 150.6]}, "r_domony": {"len": 2587, "end": [291.3, -233.5]}, "r_aszod": {"len": 2085, "end": [793.1, -185.6]}, "r_dunakeszi": {"len": 2458, "end": [670.6, 332.7]}, "r_fot": {"len": 2776, "end": [-594.9, -1442.0]}};
+const MAX_PLAYERS = 500;
+
+const json = (obj, status = 200) =>
+  new Response(JSON.stringify(obj), {
+    status,
+    headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" },
+  });
+const bad = (msg, status = 400) => json({ error: msg }, status);
+
+const cleanNick = (v) => String(v ?? "").replace(/\s+/g, " ").trim().slice(0, 20);
+const nickKey = (nick) => createHash("sha1").update(nick.toLowerCase()).digest("hex").slice(0, 24);
+const hashToken = (t) => createHash("sha256").update(String(t)).digest("hex");
+const sameHash = (a, b) => {
+  const x = Buffer.from(String(a)), y = Buffer.from(String(b));
+  return x.length === y.length && timingSafeEqual(x, y);
+};
+const validToken = (t) => typeof t === "string" && /^[a-f0-9]{32,64}$/.test(t);
+
+function cleanLook(l) {
+  const hex = (v, d) => (typeof v === "string" && /^#[0-9a-fA-F]{6}$/.test(v) ? v : d);
+  const one = (v, opts, d) => (opts.includes(v) ? v : d);
+  l = l && typeof l === "object" ? l : {};
+  return {
+    color: hex(l.color, "#E2231A"),
+    color2: hex(l.color2, "#F2F2EE"),
+    rim: hex(l.rim, "#F2F2EE"),
+    livery: one(l.livery, ["none", "stripes", "band", "split"], "stripes"),
+    wing: one(l.wing, ["none", "low", "wrc"], "wrc"),
+    pod: !!l.pod,
+    num: Math.min(99, Math.max(1, Math.round(Number(l.num) || 7))),
+  };
+}
+
+// Egy menet ellenőrzése: reális idő, folytonos útvonal, rajttól a célig
+function validRun(stage, t, d, splits) {
+  const st = STAGES[stage];
+  if (!st) return "Ismeretlen szakasz.";
+  if (!Number.isInteger(t) || t < (st.len / 48) * 1000 || t > 15 * 60 * 1000) return "Valószínűtlen idő.";
+  if (!Array.isArray(d) || d.length % 3 !== 0 || d.length < 30 || d.length > 3 * 9100) return "Hibás menetadat.";
+  if (!d.every((v) => typeof v === "number" && Number.isFinite(v) && Math.abs(v) < 20000)) return "Hibás menetadat.";
+  const n = d.length / 3;
+  if (Math.abs(n * 100 - t) > 400) return "A menet hossza nem egyezik az idővel.";
+  if (Math.hypot(d[0], d[1]) > 35) return "A menet nem a rajtnál kezdődik.";
+  for (let i = 3; i < d.length; i += 3) if (Math.hypot(d[i] - d[i - 3], d[i + 1] - d[i - 2]) > 15) return "Szakadás a menetben.";
+  if (Math.hypot(d[d.length - 3] - st.end[0], d[d.length - 2] - st.end[1]) > 45) return "A menet nem a célnál ér véget.";
+  if (!Array.isArray(splits) || splits.length > 2 || !splits.every((v) => Number.isInteger(v) && v > 0 && v < t)) return "Hibás részidők.";
+  return null;
+}
+
+async function board(players) {
+  const { blobs } = await players.list();
+  const out = await Promise.all(
+    blobs.map(async (b) => {
+      const p = await players.get(b.key, { type: "json" });
+      return p ? { nick: p.nick, look: p.look || {}, times: p.times || {} } : null;
+    })
+  );
+  return out.filter(Boolean);
+}
+
+export default async (req) => {
+  const url = new URL(req.url);
+  const route = url.pathname.replace(/^\/api\/?/, "");
+  const players = getStore({ name: "players", consistency: "strong" });
+  const ghosts = getStore({ name: "ghosts", consistency: "strong" });
+
+  try {
+    if (req.method === "GET" && route === "board") return json({ players: await board(players) });
+
+    if (req.method === "GET" && route === "ghost") {
+      const stage = url.searchParams.get("stage"), nick = cleanNick(url.searchParams.get("nick"));
+      if (!STAGES[stage] || !nick) return bad("Hiányzó adat.");
+      const g = await ghosts.get(stage + "/" + nickKey(nick), { type: "json" });
+      return g ? json(g) : bad("Nincs szellemautó.", 404);
+    }
+
+    if (req.method !== "POST") return bad("Nem támogatott kérés.", 405);
+    const len = Number(req.headers.get("content-length") || 0);
+    if (len > 400000) return bad("Túl nagy kérés.", 413);
+    let body;
+    try { body = await req.json(); } catch { return bad("Hibás kérés."); }
+    const nick = cleanNick(body.nick);
+    if (nick.length < 2) return bad("A név legalább 2 karakter legyen.");
+    if (!validToken(body.token)) return bad("Hibás azonosító.");
+    const key = nickKey(nick);
+    const existing = await players.get(key, { type: "json" });
+    if (existing && !sameHash(existing.tokenHash, hashToken(body.token))) return bad("Ezt a nevet már valaki más használja.", 409);
+
+    const ensure = async () => {
+      if (existing) return existing;
+      const { blobs } = await players.list();
+      if (blobs.length >= MAX_PLAYERS) throw Object.assign(new Error("Megtelt a ranglista."), { status: 503 });
+      return { nick, tokenHash: hashToken(body.token), look: cleanLook(body.look), times: {}, created: Date.now() };
+    };
+
+    if (route === "register") {
+      const p = await ensure();
+      p.nick = nick;
+      await players.setJSON(key, p);
+      return json({ ok: true });
+    }
+
+    if (route === "look") {
+      const p = await ensure();
+      p.look = cleanLook(body.look);
+      await players.setJSON(key, p);
+      return json({ ok: true });
+    }
+
+    if (route === "score") {
+      const { stage, t, d, splits } = body;
+      const err = validRun(stage, t, d, splits);
+      if (err) return bad(err);
+      const p = await ensure();
+      p.nick = nick;
+      p.look = cleanLook(body.look);
+      p.times = p.times || {};
+      const prev = p.times[stage];
+      const improved = !prev || t < prev;
+      if (improved) {
+        await ghosts.setJSON(stage + "/" + key, { t, splits, d });
+        p.times[stage] = t;
+      }
+      await players.setJSON(key, p);
+      return json({ ok: true, improved, players: await board(players) });
+    }
+
+    return bad("Ismeretlen végpont.", 404);
+  } catch (e) {
+    return bad(e.status ? e.message : "Szerverhiba, próbáld újra.", e.status || 500);
+  }
+};
+
+export const config = { path: "/api/*" };
