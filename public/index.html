@@ -652,6 +652,16 @@ function roadTexture(kind){
   });
   t.wrapS=t.wrapT=THREE.RepeatWrapping; return t;
 }
+// talaj részlet-textúra: semleges világosság-szórás, a színt a csúcsszínek adják
+function groundTexture(kind,seed){
+  const r=mulberry32(seed*7+(kind==='field'?11:1));
+  const t=canvasTex(256,256,(g,w,h)=>{g.fillStyle='#EDEDE8';g.fillRect(0,0,w,h);
+    for(let i=0;i<60;i++){const l=185+r()*70|0;g.fillStyle=`rgba(${l},${l},${l-8},.4)`;g.beginPath();g.arc(r()*w,r()*h,8+r()*26,0,7);g.fill()}
+    if(kind==='field'){for(let y=0;y<h;y+=16){g.fillStyle='rgba(60,45,25,.28)';g.fillRect(0,y,w,5);g.fillStyle='rgba(255,250,235,.35)';g.fillRect(0,y+8,w,3)}
+      for(let i=0;i<5000;i++){const l=120+r()*135|0;g.fillStyle=`rgba(${l},${l-6},${l-18},.45)`;g.fillRect(r()*w,r()*h,1+r()*2,1+r()*2)}}
+    else for(let i=0;i<14000;i++){const l=105+r()*150|0,yl=r()<.25;g.fillStyle=yl?`rgba(${l+20},${l+15},${l-30},.55)`:`rgba(${l-10},${l},${l-15},.5)`;
+      const x=r()*w,y=r()*h;g.fillRect(x,y,1,2+r()*4)}});
+  t.wrapS=t.wrapT=THREE.RepeatWrapping;return t}
 function bannerTex(text,sub){
   return canvasTex(512,128,(g,w,h)=>{g.fillStyle='#FFC400';g.fillRect(0,0,w,h);g.fillStyle='#14182B';g.fillRect(0,0,w,14);g.fillRect(0,h-14,w,14);
     g.font='italic 900 74px "Barlow Condensed", Arial Narrow, sans-serif';g.textAlign='center';g.textBaseline='middle';g.fillText(text,w/2,h/2+4);
@@ -724,7 +734,7 @@ function buildHouses(BL,heightAt,seed){
 
 function disposeWorld(){
   if(!world)return;
-  world.group.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material){const ms=Array.isArray(o.material)?o.material:[o.material];ms.forEach(m=>{if(m.map)m.map.dispose();m.dispose()})}});
+  world.group.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material){const ms=Array.isArray(o.material)?o.material:[o.material];ms.forEach(m=>{if(m.map)m.map.dispose();if(m.userData.map2)m.userData.map2.dispose();m.dispose()})}});
   scene.remove(world.group); world=null;
 }
 
@@ -745,24 +755,30 @@ function buildWorld(st){
   const q={}, CH=40, mark=new Set();
   for(let i=0;i<N;i+=8){const ci=Math.floor((X[i]-minX)/(SP*CH)),cj=Math.floor((Z[i]-minZ)/(SP*CH));for(let a=-1;a<=1;a++)for(let b=-1;b<=1;b++)mark.add((ci+a)*10000+(cj+b))}
   const g0=new THREE.Color(st.ground[0]),g1=new THREE.Color(st.ground[1]),sh=new THREE.Color(st.shoulder),tc=new THREE.Color();
-  const terrMat=new THREE.MeshLambertMaterial({vertexColors:true});const fallow=new THREE.Color(0x9C8A5C);
+  const terrMat=new THREE.MeshLambertMaterial({vertexColors:true,map:groundTexture('grass',st.seed)}),fieldTex=groundTexture('field',st.seed);terrMat.userData.map2=fieldTex;const fallow=new THREE.Color(0x9C8A5C),dry=new THREE.Color(0xB8B060);
+  // két részlet-textúra (rét / szántó), a 'field' csúcsattribútum szerint keverve
+  terrMat.onBeforeCompile=sh=>{sh.uniforms.map2={value:fieldTex};
+    sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nattribute float field;varying float vField;').replace('#include <uv_vertex>','#include <uv_vertex>\nvField=field;');
+    sh.fragmentShader=sh.fragmentShader.replace('#include <common>','#include <common>\nuniform sampler2D map2;varying float vField;')
+      .replace('#include <map_fragment>','vec4 texelColor=mix(texture2D(map,vUv),texture2D(map2,vUv),clamp(vField,0.0,1.0));texelColor=mapTexelToLinear(texelColor);diffuseColor*=texelColor;')};
   for(let cj=0;cj<nzc-1;cj+=CH)for(let ci=0;ci<nx-1;ci+=CH){
     const w=Math.min(CH,nx-1-ci)+1,hh=Math.min(CH,nzc-1-cj)+1;
     // skip chunks entirely far from road
     if(!mark.has((ci/CH)*10000+(cj/CH)))continue;
-    const pos=new Float32Array(w*hh*3),col=new Float32Array(w*hh*3),idx=[];
+    const pos=new Float32Array(w*hh*3),col=new Float32Array(w*hh*3),uv=new Float32Array(w*hh*2),fld=new Float32Array(w*hh),idx=[];
     for(let j=0;j<hh;j++)for(let i=0;i<w;i++){
       const gi=(cj+j)*nx+(ci+i),v=j*w+i,x=minX+(ci+i)*SP,z=minZ+(cj+j)*SP;
-      nearest(x,z,q);const d=q.d;pos[v*3]=x;pos[v*3+1]=heightAt(x,z);pos[v*3+2]=z;
+      nearest(x,z,q);const d=q.d;pos[v*3]=x;pos[v*3+1]=heightAt(x,z);pos[v*3+2]=z;uv[v*2]=(x*.94+z*.34)/7;uv[v*2+1]=(z*.94-x*.34)/7;
       const lc=T.landAt?T.landAt(x,z):0;
-      if(lc&&LAND_COL[lc]){tc.setHex(LAND_COL[lc]);if(lc===1)tc.lerp(fallow,(Math.sin((x*.6+z*.8)/2.2)*.5+.5)*.35+clamp(nz(x/60,z/60,2)+.3,0,1)*.4)}
+      if(lc&&LAND_COL[lc]){tc.setHex(LAND_COL[lc]);if(lc===1){tc.lerp(fallow,clamp(nz(x/60,z/60,2)+.3,0,1)*.5);fld[v]=1}}
       else tc.copy(g0).lerp(g1,clamp(nz(x/40,z/40,3)*1.2+.5,0,1));
-      if(d<q.hw+6)tc.lerp(sh,1-sstep((d-q.hw)/6));
-      const f=0.9+nz(x/9+7,z/9,2)*0.18; col[v*3]=tc.r*f;col[v*3+1]=tc.g*f;col[v*3+2]=tc.b*f;
+      if(lc!==1&&lc!==6&&lc!==7&&lc!==8)tc.lerp(dry,clamp(nz(x/22+3,z/22,2)*1.4-.2,0,.28));
+      if(d<q.hw+6){const k=1-sstep((d-q.hw)/6);tc.lerp(sh,k);fld[v]*=1-k}
+      let f=0.95+nz(x/9+7,z/9,2)*0.16+nz(x/3.1,z/3.1+5,1)*0.06;if(insideBld(x,z,2.5))f*=.8; col[v*3]=tc.r*f;col[v*3+1]=tc.g*f;col[v*3+2]=tc.b*f;
     }
     for(let j=0;j<hh-1;j++)for(let i=0;i<w-1;i++){const a=j*w+i,b=a+1,c=a+w,d=c+1;idx.push(a,c,b,b,c,d)}
     const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.BufferAttribute(pos,3));geo.setAttribute('color',new THREE.BufferAttribute(col,3));
-    geo.setIndex(idx);geo.computeVertexNormals();
+    geo.setAttribute('uv',new THREE.BufferAttribute(uv,2));geo.setAttribute('field',new THREE.BufferAttribute(fld,1));geo.setIndex(idx);geo.computeVertexNormals();
     group.add(new THREE.Mesh(geo,terrMat));
   }
   // water
