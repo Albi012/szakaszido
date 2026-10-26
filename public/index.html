@@ -144,6 +144,25 @@ ol.times .gap{font-size:13px;color:var(--board-muted);font-variant-numeric:tabul
 #touch .b-menu{right:calc(env(safe-area-inset-right,0px) + 14px);top:calc(env(safe-area-inset-top,0px) + 196px);width:auto;height:auto;border-radius:4px;padding:6px 12px;font-size:16px}
 body.touch .speedo{bottom:calc(env(safe-area-inset-bottom,0px) + 222px)}
 body.touch .hint{display:none}
+body.touch #hud,#touch{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+/* fekvő telefon: alacsony képernyő, minden elem a saját sávjában */
+@media (pointer:coarse) and (max-height:520px) and (orientation:landscape){
+  #touch .b-l,#touch .b-r{width:92px;height:92px;bottom:calc(env(safe-area-inset-bottom,0px) + 14px)}
+  #touch .b-r{left:calc(env(safe-area-inset-left,0px) + 116px)}
+  #touch .b-up{right:calc(env(safe-area-inset-right,0px) + 14px);bottom:calc(env(safe-area-inset-bottom,0px) + 14px);width:100px;height:100px}
+  #touch .b-dn{right:calc(env(safe-area-inset-right,0px) + 124px);bottom:calc(env(safe-area-inset-bottom,0px) + 14px);width:84px;height:84px}
+  #touch .b-hb{right:calc(env(safe-area-inset-right,0px) + 26px);bottom:calc(env(safe-area-inset-bottom,0px) + 124px);width:76px;height:76px;font-size:15px}
+  #touch .b-menu{right:auto;left:calc(env(safe-area-inset-left,0px) + 14px);top:calc(env(safe-area-inset-top,0px) + 112px)}
+  #mini{width:96px;height:96px;top:calc(env(safe-area-inset-top,0px) + 14px)}
+  .hud-top{right:calc(env(safe-area-inset-right,0px) + 120px)}
+  .tplate .c{font-size:18px} .tplate .tm{font-size:24px;min-width:100px} #hDelta{font-size:22px}
+  .prog{top:calc(env(safe-area-inset-top,0px) + 54px);width:min(240px,40vw)}
+  .street{top:calc(env(safe-area-inset-top,0px) + 68px);font-size:17px}
+  .note{top:calc(env(safe-area-inset-top,0px) + 10px);padding:4px 12px 4px 8px} .note b{font-size:26px} .note small{font-size:14px} .note svg{width:28px;height:28px}
+  body.touch .speedo{right:auto;left:calc(env(safe-area-inset-left,0px) + 64px);bottom:calc(env(safe-area-inset-bottom,0px) + 118px);text-align:left}
+  #count{font-size:min(30vh,120px)}
+  .speedo b{font-size:44px} .speedo span{font-size:14px} .speedo em{width:32px;height:32px;font-size:24px;left:-42px;top:2px}
+}
 
 .stage.add{grid-template-columns:auto 1fr;background:rgba(251,251,248,.14);color:#fff;border:2px dashed rgba(255,255,255,.55);border-left-width:2px;box-shadow:none}
 .stage.add .code{background:#fff;color:#14182B}
@@ -503,7 +522,8 @@ function saveLocal(){try{localStorage.setItem(LKEY,JSON.stringify(local))}catch(
 /* ================= three setup ================= */
 const canvas=$('#c');
 const renderer=new THREE.WebGLRenderer({canvas,antialias:true,powerPreference:'high-performance'});
-renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
+const coarse=matchMedia('(pointer: coarse)').matches;
+renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,coarse?1.5:2));
 const scene=new THREE.Scene();
 const camera=new THREE.PerspectiveCamera(64,1,0.3,900);
 const hemi=new THREE.HemisphereLight(0xffffff,0x445533,0.8); scene.add(hemi);
@@ -652,15 +672,89 @@ function roadTexture(kind){
   });
   t.wrapS=t.wrapT=THREE.RepeatWrapping; return t;
 }
+// talaj részlet-textúra: semleges világosság-szórás, a színt a csúcsszínek adják
+function groundTexture(kind,seed){
+  const r=mulberry32(seed*7+(kind==='field'?11:1));
+  const t=canvasTex(256,256,(g,w,h)=>{g.fillStyle='#EDEDE8';g.fillRect(0,0,w,h);
+    for(let i=0;i<60;i++){const l=185+r()*70|0;g.fillStyle=`rgba(${l},${l},${l-8},.4)`;g.beginPath();g.arc(r()*w,r()*h,8+r()*26,0,7);g.fill()}
+    if(kind==='field'){for(let y=0;y<h;y+=16){g.fillStyle='rgba(60,45,25,.28)';g.fillRect(0,y,w,5);g.fillStyle='rgba(255,250,235,.35)';g.fillRect(0,y+8,w,3)}
+      for(let i=0;i<5000;i++){const l=120+r()*135|0;g.fillStyle=`rgba(${l},${l-6},${l-18},.45)`;g.fillRect(r()*w,r()*h,1+r()*2,1+r()*2)}}
+    else for(let i=0;i<14000;i++){const l=105+r()*150|0,yl=r()<.25;g.fillStyle=yl?`rgba(${l+20},${l+15},${l-30},.55)`:`rgba(${l-10},${l},${l-15},.5)`;
+      const x=r()*w,y=r()*h;g.fillRect(x,y,1,2+r()*4)}});
+  t.wrapS=t.wrapT=THREE.RepeatWrapping;return t}
 function bannerTex(text,sub){
   return canvasTex(512,128,(g,w,h)=>{g.fillStyle='#FFC400';g.fillRect(0,0,w,h);g.fillStyle='#14182B';g.fillRect(0,0,w,14);g.fillRect(0,h-14,w,14);
     g.font='italic 900 74px "Barlow Condensed", Arial Narrow, sans-serif';g.textAlign='center';g.textBaseline='middle';g.fillText(text,w/2,h/2+4);
     g.font='italic 800 30px "Barlow Condensed", Arial Narrow, sans-serif';g.textAlign='left';g.fillText(sub,22,h/2+4);g.textAlign='right';g.fillText(sub,w-22,h/2+4)});
 }
 
+// homlokzat: egy szint egy csempe (u: 3 m, v: egy szint); a (0.04,0.97) pont sima falfelület
+function facadeTexture(){
+  const t=canvasTex(128,128,(g,w,h)=>{g.fillStyle='#fff';g.fillRect(0,0,w,h);
+    g.fillStyle='rgba(0,0,0,.07)';g.fillRect(0,h-10,w,10);g.fillStyle='rgba(0,0,0,.05)';g.fillRect(0,0,w,4);
+    const x0=40,x1=88,y0=24,y1=82;g.fillStyle='#E9E4D8';g.fillRect(x0-5,y0-5,x1-x0+10,y1-y0+14);
+    g.fillStyle='#596877';g.fillRect(x0-12,y0,9,y1-y0);g.fillRect(x1+3,y0,9,y1-y0);
+    g.fillStyle='rgba(255,255,255,.18)';for(let y=y0+4;y<y1;y+=6){g.fillRect(x0-12,y,9,2);g.fillRect(x1+3,y,9,2)}
+    g.fillStyle='#2E3A46';g.fillRect(x0,y0,x1-x0,y1-y0);g.fillStyle='rgba(170,200,225,.35)';g.fillRect(x0+3,y0+3,(x1-x0)/2-5,y1-y0-6);
+    g.fillStyle='#F1EEE6';g.fillRect((x0+x1)/2-2,y0,4,y1-y0);g.fillRect(x0,(y0+y1)/2-2,x1-x0,4);g.fillStyle='#CFC8B8';g.fillRect(x0-7,y1,x1-x0+14,6)});
+  t.wrapS=t.wrapT=THREE.RepeatWrapping;return t}
+function roofTexture(){
+  const t=canvasTex(64,64,(g,w,h)=>{g.fillStyle='#fff';g.fillRect(0,0,w,h);
+    for(let y=0;y<h;y+=16){g.fillStyle='rgba(0,0,0,.22)';g.fillRect(0,y+13,w,3);g.fillStyle='rgba(255,255,255,.25)';g.fillRect(0,y,w,2);
+      const o=(y/16)%2?8:0;g.fillStyle='rgba(0,0,0,.08)';for(let x=o;x<w;x+=16)g.fillRect(x,y,2,13)}});
+  t.wrapS=t.wrapT=THREE.RepeatWrapping;return t}
+const WALL_COLS=[0xF2ECDD,0xEEDDAE,0xE6CC92,0xF0E6D0,0xDFCDB6,0xEBD6C4,0xDADDC8,0xF5F3EC,0xE9D9B9,0xD6C3A5];
+const ROOF_COLS=[0xA5452C,0xB4573A,0x8F3B27,0xA04A33,0x7B4B36,0x5C5852,0x9A5B3C,0xB0503A];
+function buildHouses(BL,heightAt,seed){
+  const r=mulberry32(seed*17+3),wP=[],wU=[],wC=[],rP=[],rU=[],rC=[],c=new THREE.Color(),c2=new THREE.Color(),wc=new THREE.Color();
+  const tri=(P,U,C,a,b,d,ua,ub,ud,col)=>{P.push(...a,...b,...d);U.push(...ua,...ub,...ud);for(let k=0;k<3;k++)C.push(col.r,col.g,col.b)};
+  const quad=(P,U,C,a,b,d,e,ua,ub,ud,ue,col)=>{tri(P,U,C,a,b,d,ua,ub,ud,col);tri(P,U,C,a,d,e,ua,ud,ue,col)};
+  const PL=[.04,.97];
+  for(const bd of BL){
+    const [x,z,hw,hl,rot,h,church]=bd,sa=Math.sin(rot),ca=Math.cos(rot);
+    // helyi tengelyek: L a hosszabb oldal iránya (erre fut a gerinc), S rá merőleges
+    const along=hl>=hw,A=along?hl:hw,B=along?hw:hl,Lx=along?sa:ca,Lz=along?ca:-sa,Sx=-Lz,Sz=Lx;
+    const P=(a,b2,y)=>[x+Lx*a+Sx*b2,y,z+Lz*a+Sz*b2];
+    const gy=heightAt(x,z);let lo=gy;for(const[i,j]of[[1,1],[1,-1],[-1,1],[-1,-1]])lo=Math.min(lo,heightAt(x+Lx*A*i+Sx*B*j,z+Lz*A*i+Sz*B*j));
+    const y0=lo-0.8,yp=gy+0.45,top=gy+h,storeys=church?1:Math.max(1,Math.round(h/3)),sh=h/storeys;
+    wc.setHex(church?0xF3F0E8:WALL_COLS[(r()*WALL_COLS.length)|0]).offsetHSL(0,0,(r()-.5)*.04);c2.copy(wc).multiplyScalar(.62);
+    const corners=[[A,B],[-A,B],[-A,-B],[A,-B]];
+    for(let k=0;k<4;k++){const [a1,b1]=corners[k],[a2,b2]=corners[(k+1)%4],u1=0,u2=Math.max(1,Math.round(Math.hypot(a2-a1,b2-b1)/3)),v1=(yp-gy)/sh,v2=h/sh;
+      quad(wP,wU,wC,P(a1,b1,y0),P(a2,b2,y0),P(a2,b2,yp),P(a1,b1,yp),PL,PL,PL,PL,c2);
+      quad(wP,wU,wC,P(a1,b1,yp),P(a2,b2,yp),P(a2,b2,top),P(a1,b1,top),[u1,v1],[u2,v1],[u2,v2],[u1,v2],wc)}
+    if(h>=8&&!church){// lapostető attikával
+      c.setHex(0x8C8880).offsetHSL(0,0,(r()-.5)*.06);const ty=top+0.35;
+      for(let k=0;k<4;k++){const [a1,b1]=corners[k],[a2,b2]=corners[(k+1)%4];quad(wP,wU,wC,P(a1,b1,top),P(a2,b2,top),P(a2,b2,ty),P(a1,b1,ty),PL,PL,PL,PL,wc)}
+      quad(rP,rU,rC,P(A,B,ty-.05),P(A,-B,ty-.05),P(-A,-B,ty-.05),P(-A,B,ty-.05),[0,0],[0,0],[0,0],[0,0],c);
+      if(r()<.6){const cx=(r()-.5)*A,cb=(r()-.5)*B,s2=Math.min(1.4,B*.3);c2.setHex(0x9A9790);
+        for(const[q1,q2,q3,q4]of[[1,1,-1,1],[-1,1,-1,-1],[-1,-1,1,-1],[1,-1,1,1]])quad(rP,rU,rC,P(cx+q1*s2,cb+q2*s2,ty),P(cx+q3*s2,cb+q4*s2,ty),P(cx+q3*s2,cb+q4*s2,ty+1),P(cx+q1*s2,cb+q2*s2,ty+1),[0,0],[0,0],[0,0],[0,0],c2);
+        quad(rP,rU,rC,P(cx+s2,cb+s2,ty+1),P(cx+s2,cb-s2,ty+1),P(cx-s2,cb-s2,ty+1),P(cx-s2,cb+s2,ty+1),[0,0],[0,0],[0,0],[0,0],c2)}
+      continue}
+    // magastető: négyzetes alapon sátortető (kockaház), hosszúkáson nyereg- vagy kontytető
+    const shed=B>9,hip=!church&&!shed&&(A/B<1.35||r()<.25),pitch=church?1.05:shed?.22:B>6?.45:.62+r()*.2,rh=B*pitch,o=.45,eave=top-o*pitch,ridge=top+rh;
+    const RA=A+o,RB=B+o,rl=hip?Math.max(0,A-B):RA;
+    c.setHex(church?0x6E4A3A:shed?[0x7D7A74,0x8A5A44,0x6F7570][(r()*3)|0]:ROOF_COLS[(r()*ROOF_COLS.length)|0]).offsetHSL(0,0,(r()-.5)*.05);
+    const sl=Math.hypot(RB,rh+o*pitch)/2.2;
+    for(const sg of[1,-1]){// két hosszanti tetősík
+      quad(rP,rU,rC,P(-RA*sg,RB*sg,eave),P(RA*sg,RB*sg,eave),P(rl*sg,0,ridge),P(-rl*sg,0,ridge),[0,0],[RA*2/2.2,0],[(RA+rl)/2.2,sl],[(RA-rl)/2.2,sl],c);
+      if(hip)tri(rP,rU,rC,P(RA*sg,RB*sg,eave),P(RA*sg,-RB*sg,eave),P(rl*sg,0,ridge),[0,0],[RB*2/2.2,0],[RB/2.2,Math.hypot(RA-rl,rh)/2.2],c);
+      else tri(wP,wU,wC,P(A*sg,B*sg,top),P(A*sg,-B*sg,top),P(A*sg,0,ridge),PL,PL,PL,wc)}
+    if(!church&&!shed&&r()<.7){// kémény
+      const cx=(r()-.5)*Math.max(.5,rl*1.4),cb=(r()<.5?-1:1)*B*.35,s2=.32,yb=ridge-rh*.4-.4,yt=ridge+.7;c2.setHex(r()<.5?0x8E4A38:0xB8AFA2);
+      for(const[q1,q2,q3,q4]of[[1,1,-1,1],[-1,1,-1,-1],[-1,-1,1,-1],[1,-1,1,1]])quad(rP,rU,rC,P(cx+q1*s2,cb+q2*s2,yb),P(cx+q3*s2,cb+q4*s2,yb),P(cx+q3*s2,cb+q4*s2,yt),P(cx+q1*s2,cb+q2*s2,yt),[0,0],[0,0],[0,0],[0,0],c2);
+      quad(rP,rU,rC,P(cx+s2,cb+s2,yt),P(cx+s2,cb-s2,yt),P(cx-s2,cb-s2,yt),P(cx-s2,cb+s2,yt),[0,0],[0,0],[0,0],[0,0],c2.multiplyScalar(.5))}
+  }
+  const mk=(P,U,C,mat)=>{const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(P,3));g.setAttribute('uv',new THREE.Float32BufferAttribute(U,2));
+    g.setAttribute('color',new THREE.Float32BufferAttribute(C,3));g.computeVertexNormals();return new THREE.Mesh(g,mat)};
+  const grp=new THREE.Group();
+  grp.add(mk(wP,wU,wC,new THREE.MeshLambertMaterial({map:facadeTexture(),vertexColors:true,side:THREE.DoubleSide})));
+  grp.add(mk(rP,rU,rC,new THREE.MeshLambertMaterial({map:roofTexture(),vertexColors:true,side:THREE.DoubleSide})));
+  return grp;
+}
+
 function disposeWorld(){
   if(!world)return;
-  world.group.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material){const ms=Array.isArray(o.material)?o.material:[o.material];ms.forEach(m=>{if(m.map)m.map.dispose();m.dispose()})}});
+  world.group.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material){const ms=Array.isArray(o.material)?o.material:[o.material];ms.forEach(m=>{if(m.map)m.map.dispose();if(m.userData.map2)m.userData.map2.dispose();m.dispose()})}});
   scene.remove(world.group); world=null;
 }
 
@@ -681,24 +775,30 @@ function buildWorld(st){
   const q={}, CH=40, mark=new Set();
   for(let i=0;i<N;i+=8){const ci=Math.floor((X[i]-minX)/(SP*CH)),cj=Math.floor((Z[i]-minZ)/(SP*CH));for(let a=-1;a<=1;a++)for(let b=-1;b<=1;b++)mark.add((ci+a)*10000+(cj+b))}
   const g0=new THREE.Color(st.ground[0]),g1=new THREE.Color(st.ground[1]),sh=new THREE.Color(st.shoulder),tc=new THREE.Color();
-  const terrMat=new THREE.MeshLambertMaterial({vertexColors:true});const fallow=new THREE.Color(0x9C8A5C);
+  const terrMat=new THREE.MeshLambertMaterial({vertexColors:true,map:groundTexture('grass',st.seed)}),fieldTex=groundTexture('field',st.seed);terrMat.userData.map2=fieldTex;const fallow=new THREE.Color(0x9C8A5C),dry=new THREE.Color(0xB8B060);
+  // két részlet-textúra (rét / szántó), a 'field' csúcsattribútum szerint keverve
+  terrMat.onBeforeCompile=sh=>{sh.uniforms.map2={value:fieldTex};
+    sh.vertexShader=sh.vertexShader.replace('#include <common>','#include <common>\nattribute float field;varying float vField;').replace('#include <uv_vertex>','#include <uv_vertex>\nvField=field;');
+    sh.fragmentShader=sh.fragmentShader.replace('#include <common>','#include <common>\nuniform sampler2D map2;varying float vField;')
+      .replace('#include <map_fragment>','vec4 texelColor=mix(texture2D(map,vUv),texture2D(map2,vUv),clamp(vField,0.0,1.0));texelColor=mapTexelToLinear(texelColor);diffuseColor*=texelColor;')};
   for(let cj=0;cj<nzc-1;cj+=CH)for(let ci=0;ci<nx-1;ci+=CH){
     const w=Math.min(CH,nx-1-ci)+1,hh=Math.min(CH,nzc-1-cj)+1;
     // skip chunks entirely far from road
     if(!mark.has((ci/CH)*10000+(cj/CH)))continue;
-    const pos=new Float32Array(w*hh*3),col=new Float32Array(w*hh*3),idx=[];
+    const pos=new Float32Array(w*hh*3),col=new Float32Array(w*hh*3),uv=new Float32Array(w*hh*2),fld=new Float32Array(w*hh),idx=[];
     for(let j=0;j<hh;j++)for(let i=0;i<w;i++){
       const gi=(cj+j)*nx+(ci+i),v=j*w+i,x=minX+(ci+i)*SP,z=minZ+(cj+j)*SP;
-      nearest(x,z,q);const d=q.d;pos[v*3]=x;pos[v*3+1]=heightAt(x,z);pos[v*3+2]=z;
+      nearest(x,z,q);const d=q.d;pos[v*3]=x;pos[v*3+1]=heightAt(x,z);pos[v*3+2]=z;uv[v*2]=(x*.94+z*.34)/7;uv[v*2+1]=(z*.94-x*.34)/7;
       const lc=T.landAt?T.landAt(x,z):0;
-      if(lc&&LAND_COL[lc]){tc.setHex(LAND_COL[lc]);if(lc===1)tc.lerp(fallow,(Math.sin((x*.6+z*.8)/2.2)*.5+.5)*.35+clamp(nz(x/60,z/60,2)+.3,0,1)*.4)}
+      if(lc&&LAND_COL[lc]){tc.setHex(LAND_COL[lc]);if(lc===1){tc.lerp(fallow,clamp(nz(x/60,z/60,2)+.3,0,1)*.5);fld[v]=1}}
       else tc.copy(g0).lerp(g1,clamp(nz(x/40,z/40,3)*1.2+.5,0,1));
-      if(d<q.hw+6)tc.lerp(sh,1-sstep((d-q.hw)/6));
-      const f=0.9+nz(x/9+7,z/9,2)*0.18; col[v*3]=tc.r*f;col[v*3+1]=tc.g*f;col[v*3+2]=tc.b*f;
+      if(lc!==1&&lc!==6&&lc!==7&&lc!==8)tc.lerp(dry,clamp(nz(x/22+3,z/22,2)*1.4-.2,0,.28));
+      if(d<q.hw+6){const k=1-sstep((d-q.hw)/6);tc.lerp(sh,k);fld[v]*=1-k}
+      let f=0.95+nz(x/9+7,z/9,2)*0.16+nz(x/3.1,z/3.1+5,1)*0.06;if(insideBld(x,z,2.5))f*=.8; col[v*3]=tc.r*f;col[v*3+1]=tc.g*f;col[v*3+2]=tc.b*f;
     }
     for(let j=0;j<hh-1;j++)for(let i=0;i<w-1;i++){const a=j*w+i,b=a+1,c=a+w,d=c+1;idx.push(a,c,b,b,c,d)}
     const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.BufferAttribute(pos,3));geo.setAttribute('color',new THREE.BufferAttribute(col,3));
-    geo.setIndex(idx);geo.computeVertexNormals();
+    geo.setAttribute('uv',new THREE.BufferAttribute(uv,2));geo.setAttribute('field',new THREE.BufferAttribute(fld,1));geo.setIndex(idx);geo.computeVertexNormals();
     group.add(new THREE.Mesh(geo,terrMat));
   }
   // water
@@ -716,16 +816,7 @@ function buildWorld(st){
    [[idx,'tarmac'],[idx2,looseKind]].forEach(([ix,kind])=>{if(!ix.length)return;
      const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.BufferAttribute(pos,3));geo.setAttribute('uv',new THREE.BufferAttribute(uv,2));geo.setIndex(ix);geo.computeVertexNormals();
      group.add(new THREE.Mesh(geo,new THREE.MeshLambertMaterial({map:roadTexture(kind),side:THREE.DoubleSide,polygonOffset:true,polygonOffsetFactor:-2,polygonOffsetUnits:-2})))})}
-  if(T.BL.length){
-    const walls=[0xF0ECE2,0xE6D8B0,0xD8D2C8],arrs=[[],[],[]];T.BL.forEach((b,n)=>arrs[n%3].push(b));
-    const bg=new THREE.BoxGeometry(1,1,1),rg=new THREE.ConeGeometry(.75,1,4);rg.rotateY(Math.PI/4);
-    const roofs=T.BL.filter(b=>b[5]<8);const roofM=new THREE.InstancedMesh(rg,new THREE.MeshLambertMaterial({color:0xA8432E}),Math.max(1,roofs.length));let rn=0;
-    const dmy=new THREE.Object3D();
-    arrs.forEach((arr,ci)=>{if(!arr.length)return;const m=new THREE.InstancedMesh(bg,new THREE.MeshLambertMaterial({color:walls[ci]}),arr.length);
-      arr.forEach((b,n)=>{const [x,z,hw,hl,rot,h]=b,y=heightAt(x,z);dmy.rotation.set(0,rot,0);dmy.position.set(x,y-1+(h+1)/2,z);dmy.scale.set(hw*2,h+1,hl*2);dmy.updateMatrix();m.setMatrixAt(n,dmy.matrix);
-        if(h<8){dmy.position.set(x,y+h+Math.min(hw,hl)*0.55,z);dmy.scale.set(hw*2*1.38,Math.min(hw,hl)*1.1,hl*2*1.38);dmy.updateMatrix();roofM.setMatrixAt(rn++,dmy.matrix)}});group.add(m)});
-    roofM.count=rn;group.add(roofM);
-  }
+  if(T.BL.length)group.add(buildHouses(T.BL,heightAt,st.seed));
 
   // trees
   const dummy=new THREE.Object3D();
@@ -1178,7 +1269,8 @@ async function loadGhost(){
 async function startRace(){
   if(!curP()||!curP().nick){openWho(true);return}
   initAudio();
-  if('speechSynthesis' in window)try{speechSynthesis.cancel()}catch(e){}
+  if('speechSynthesis' in window)try{speechSynthesis.cancel();if(coarse){const u=new SpeechSynthesisUtterance(' ');u.volume=0;speechSynthesis.speak(u)}}catch(e){}
+  if(coarse)goFullscreen();
   closeGarageView();
   hideScreens();$('#finish').hidden=true;$('#garage').hidden=true;$('#hud').hidden=false;
   const st=STAGES[stageIx];$('#hStage').textContent=st.code;$('#hTime').textContent=fmt(0);
@@ -1375,13 +1467,20 @@ function updateCamera(dt){
   camera.lookAt(look);
   const fov=62+Math.min(12,sp*0.25);if(Math.abs(camera.fov-fov)>0.1){camera.fov=fov;camera.updateProjectionMatrix()}
 }
+const mfA={},mfB={},mfLook=new THREE.Vector3();
+function trackAt(s,o){const f=Math.max(0,Math.min(T.N-1.001,s/STEP)),i=Math.floor(f),t=f-i;
+  o.x=T.X[i]+(T.X[i+1]-T.X[i])*t;o.y=T.Y[i]+(T.Y[i+1]-T.Y[i])*t;o.z=T.Z[i]+(T.Z[i+1]-T.Z[i])*t;return o}
 function menuFly(dt){
   menuS+=dt*(prefersReduced?4:11);if(menuS>T.L-60)menuS=0;
-  const i=Math.min(T.N-1,Math.floor(menuS/STEP)),j=Math.min(T.N-1,i+22);
-  const rx=-Math.cos(T.H[i]),rz=Math.sin(T.H[i]);
-  const tx=T.X[i]+rx*16,tz=T.Z[i]+rz*16;let ty=T.Y[i]+11;
-  if(menuS<1){camPos.set(tx,ty,tz)}camPos.x+=(tx-camPos.x)*Math.min(1,dt*2);camPos.z+=(tz-camPos.z)*Math.min(1,dt*2);camPos.y+=(ty-camPos.y)*Math.min(1,dt*2);
-  camera.position.copy(camPos);camera.lookAt(T.X[j],T.Y[j]+1,T.Z[j]);
+  // folyamatos (interpolált) pályapontok, a menetirányt hosszabb szakaszra átlagolva, így nincs lépcsőzés
+  trackAt(menuS-20,mfA);trackAt(menuS+20,mfB);let fx=mfB.x-mfA.x,fz=mfB.z-mfA.z;const fl=Math.hypot(fx,fz)||1;fx/=fl;fz/=fl;
+  trackAt(menuS,mfA);const tx=mfA.x-fz*16,tz=mfA.z+fx*16,ty=mfA.y+11;
+  trackAt(menuS+44,mfB);
+  const k=1-Math.exp(-dt*2),kl=1-Math.exp(-dt*3);
+  if(menuS<1){camPos.set(tx,ty,tz);mfLook.set(mfB.x,mfB.y+1,mfB.z)}
+  camPos.x+=(tx-camPos.x)*k;camPos.y+=(ty-camPos.y)*k;camPos.z+=(tz-camPos.z)*k;
+  mfLook.x+=(mfB.x-mfLook.x)*kl;mfLook.y+=(mfB.y+1-mfLook.y)*kl;mfLook.z+=(mfB.z-mfLook.z)*kl;
+  camera.position.copy(camPos);camera.lookAt(mfLook);
   if(camera.fov!==60){camera.fov=60;camera.updateProjectionMatrix()}
   updateParticles(dt);
 }
@@ -1465,10 +1564,25 @@ addEventListener('keyup',e=>{const k=KEYMAP[e.code];if(k)input[k]=false});
 addEventListener('blur',()=>{for(const k in input)input[k]=false});
 $('#go').onclick=startRace;$('#again').onclick=startRace;$('#toMenu').onclick=toMenu;$('#tMenu').onclick=toMenu;
 
-if(matchMedia('(pointer: coarse)').matches){
+// telefonon teljes képernyő és fekvő tájolás, ahol a böngésző engedi (iPhone Safari nem)
+function goFullscreen(){const d=document.documentElement,rf=d.requestFullscreen||d.webkitRequestFullscreen;
+  if(!rf||document.fullscreenElement||document.webkitFullscreenElement)return;
+  try{const pr=rf.call(d,{navigationUI:'hide'});const lock=()=>{try{const o=screen.orientation;if(o&&o.lock)o.lock('landscape').catch(()=>{})}catch(e){}};
+    if(pr&&pr.then)pr.then(lock).catch(()=>{});else lock()}catch(e){}}
+document.addEventListener('visibilitychange',()=>{if(!ac)return;if(document.hidden){for(const k in input)input[k]=false;ac.suspend().catch(()=>{})}else if(state==='race'||state==='countdown')ac.resume().catch(()=>{})});
+if(coarse){
   document.body.classList.add('touch');const tp=$('#touch');
+  // kormány: a két gomb egy sávként működik, az ujjat át lehet húzni egyikről a másikra
+  const bl=tp.querySelector('.b-l'),br=tp.querySelector('.b-r');
+  const steer=e=>{const a=bl.getBoundingClientRect(),b=br.getBoundingClientRect(),mid=(a.right+b.left)/2;const L=e.clientX<mid;
+    input.left=L;input.right=!L;bl.classList.toggle('on',L);br.classList.toggle('on',!L)};
+  let steerId=null;const steerOff=e=>{if(e&&e.pointerId!==steerId)return;steerId=null;input.left=input.right=false;bl.classList.remove('on');br.classList.remove('on')};
+  [bl,br].forEach(b=>{b.addEventListener('pointerdown',e=>{e.preventDefault();steerId=e.pointerId;try{b.setPointerCapture(e.pointerId)}catch(_){}steer(e)});
+    b.addEventListener('pointermove',e=>{if(e.pointerId===steerId)steer(e)});
+    b.addEventListener('pointerup',steerOff);b.addEventListener('pointercancel',steerOff);b.addEventListener('lostpointercapture',steerOff);
+    b.addEventListener('contextmenu',e=>e.preventDefault())});
   const show=()=>{tp.hidden=!(state==='race'||state==='countdown')};setInterval(show,250);
-  tp.querySelectorAll('button[data-k]').forEach(b=>{const k=b.dataset.k;
+  tp.querySelectorAll('button[data-k]:not(.b-l):not(.b-r)').forEach(b=>{const k=b.dataset.k;
     const on=e=>{e.preventDefault();input[k]=true;b.classList.add('on');try{b.setPointerCapture(e.pointerId)}catch(_){}};
     const offf=e=>{input[k]=false;b.classList.remove('on')};
     b.addEventListener('pointerdown',on);b.addEventListener('pointerup',offf);b.addEventListener('pointercancel',offf);b.addEventListener('lostpointercapture',offf);
