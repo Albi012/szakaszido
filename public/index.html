@@ -98,6 +98,8 @@ ol.times .gap{font-size:13px;color:var(--board-muted);font-variant-numeric:tabul
 .tplate .tm{font-weight:800;font-style:italic;font-size:34px;padding:0 12px;font-variant-numeric:tabular-nums;min-width:140px}
 #hDelta{font-weight:800;font-style:italic;font-size:30px;padding:2px 12px;border-radius:4px;color:#fff;opacity:0;transition:opacity .25s;font-variant-numeric:tabular-nums}
 #hDelta.show{opacity:1}
+.hrestart{pointer-events:auto;margin-right:auto;align-self:center;border:0;border-radius:4px;background:rgba(251,251,248,.88);color:#14182B;font-family:var(--cond);font-weight:800;font-style:italic;font-size:20px;padding:6px 12px;cursor:pointer;box-shadow:0 2px 0 rgba(0,0,0,.3);-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+.hrestart:active{background:var(--signal)}
 #hDelta.up{background:var(--red)} #hDelta.down{background:var(--green)}
 #mini{position:absolute;right:calc(env(safe-area-inset-right,0px) + 14px);top:calc(env(safe-area-inset-top,0px) + 62px);width:180px;height:180px;filter:drop-shadow(0 2px 4px rgba(0,0,0,.35))}
 @media (max-width:820px){#mini{width:124px;height:124px}}
@@ -302,7 +304,7 @@ body.touch #hud,#touch{-webkit-user-select:none;user-select:none;-webkit-touch-c
       </div>
       <div class="keys">
         <kbd>↑</kbd> <kbd>↓</kbd> <kbd>←</kbd> <kbd>→</kbd> vagy <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> vezetés,
-        <kbd>Szóköz</kbd> kézifék, <kbd>R</kbd> vissza az útra, <kbd>C</kbd> kamera, <kbd>M</kbd> hang, <kbd>Esc</kbd> menü
+        <kbd>Szóköz</kbd> kézifék, <kbd>R</kbd> vissza az útra, <kbd>Backspace</kbd> újraindítás, <kbd>C</kbd> kamera, <kbd>M</kbd> hang, <kbd>Esc</kbd> menü
       </div>
     </div>
   </div>
@@ -332,6 +334,7 @@ body.touch #hud,#touch{-webkit-user-select:none;user-select:none;-webkit-touch-c
 <div id="hud" hidden>
   <div class="hud-top">
     <div class="tplate"><span class="c" id="hStage">GY1</span><span class="tm" id="hTime">0:00,00</span></div>
+    <button class="hrestart" id="hRestart" tabindex="-1" aria-label="Futam újraindítása">↻ Újra</button>
     <div id="hDelta"></div>
   </div>
   <div class="street" id="hStreet"></div>
@@ -343,7 +346,7 @@ body.touch #hud,#touch{-webkit-user-select:none;user-select:none;-webkit-touch-c
   </div>
   <div class="speedo"><em id="hGear">1</em><b id="hSpd">0</b><span>km/h</span></div>
   <div id="count"></div>
-  <div class="hint" id="hint">Szóköz: kézifék a hajtűkben. R: vissza az útra.</div>
+  <div class="hint" id="hint">Szóköz: kézifék a hajtűkben. R: vissza az útra. Backspace: újraindítás.</div>
 </div>
 
 <div id="finish" class="screen" hidden>
@@ -1266,6 +1269,7 @@ async function loadGhost(){
   try{const v=await api('ghost?stage='+encodeURIComponent(st.id)+'&nick='+encodeURIComponent(row.nick));if(v&&Array.isArray(v.d))ghost={d:v.d,t:v.t,splits:Array.isArray(v.splits)?v.splits:[],look:Object.assign({livery:'none'},row.look)}}catch(e){}
 }
 
+let raceRun=0;
 async function startRace(){
   if(!curP()||!curP().nick){openWho(true);return}
   initAudio();
@@ -1280,7 +1284,7 @@ async function startRace(){
   placeCar(12);maxS=12;raceTime=0;splitsHit=[];rec=[];recT=0.1;noteIdx=0;spIdx=0;deltaT=0;shake=0;
   $('#hDelta').className='';$('#pMe').style.background=local.look.color;
   state='countdown';countT=3.999;lastCount=-1;
-  await loadGhost();
+  const run=++raceRun;await loadGhost();if(run!==raceRun)return;
   if(ghost&&state!=='menu'){ghostMesh=makeCar(ghost.look,true);scene.add(ghostMesh);$('#pGhost').hidden=false;$('#pGhost').style.background=ghost.look.color||'#888'}else $('#pGhost').hidden=true;
   camH=car.h;camPos.set(car.x-Math.sin(car.h)*8,car.y+4,car.z-Math.cos(car.h)*8);
   $('#hint').hidden=false;setTimeout(()=>{$('#hint').hidden=true},9000);
@@ -1555,6 +1559,7 @@ addEventListener('keydown',e=>{
   if(state==='import'){if(e.code==='Escape')closeImporter();return}
   if(state==='finish'){if(e.code==='Escape'){toMenu()}else if(e.code==='KeyR'){e.preventDefault();startRace()}return}
   const k=KEYMAP[e.code];if(k){input[k]=true;e.preventDefault()}
+  if(e.code==='Backspace'&&(state==='race'||state==='countdown')){e.preventDefault();startRace();return}
   if(e.code==='KeyR'&&state==='race'){T.nearest(car.x,car.z,nq);if(nq.d!==Infinity)placeCar(nq.s)}
   if(e.code==='KeyC')camMode=1-camMode;
   if(e.code==='KeyM'){const v=!soundOn;$('#optSound').checked=v;setSound(v);SET.sound=v;saveSet()}
@@ -1562,6 +1567,7 @@ addEventListener('keydown',e=>{
 });
 addEventListener('keyup',e=>{const k=KEYMAP[e.code];if(k)input[k]=false});
 addEventListener('blur',()=>{for(const k in input)input[k]=false});
+$('#hRestart').addEventListener('pointerdown',e=>e.preventDefault());$('#hRestart').onclick=()=>{if(state==='race'||state==='countdown')startRace()};
 $('#go').onclick=startRace;$('#again').onclick=startRace;$('#toMenu').onclick=toMenu;$('#tMenu').onclick=toMenu;
 
 // telefonon teljes képernyő és fekvő tájolás, ahol a böngésző engedi (iPhone Safari nem)
