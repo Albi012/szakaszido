@@ -98,6 +98,8 @@ ol.times .gap{font-size:13px;color:var(--board-muted);font-variant-numeric:tabul
 .tplate .tm{font-weight:800;font-style:italic;font-size:34px;padding:0 12px;font-variant-numeric:tabular-nums;min-width:140px}
 #hDelta{font-weight:800;font-style:italic;font-size:30px;padding:2px 12px;border-radius:4px;color:#fff;opacity:0;transition:opacity .25s;font-variant-numeric:tabular-nums}
 #hDelta.show{opacity:1}
+.hrestart{pointer-events:auto;margin-right:auto;align-self:center;border:0;border-radius:4px;background:rgba(251,251,248,.88);color:#14182B;font-family:var(--cond);font-weight:800;font-style:italic;font-size:20px;padding:6px 12px;cursor:pointer;box-shadow:0 2px 0 rgba(0,0,0,.3);-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+.hrestart:active{background:var(--signal)}
 #hDelta.up{background:var(--red)} #hDelta.down{background:var(--green)}
 #mini{position:absolute;right:calc(env(safe-area-inset-right,0px) + 14px);top:calc(env(safe-area-inset-top,0px) + 62px);width:180px;height:180px;filter:drop-shadow(0 2px 4px rgba(0,0,0,.35))}
 @media (max-width:820px){#mini{width:124px;height:124px}}
@@ -302,7 +304,7 @@ body.touch #hud,#touch{-webkit-user-select:none;user-select:none;-webkit-touch-c
       </div>
       <div class="keys">
         <kbd>↑</kbd> <kbd>↓</kbd> <kbd>←</kbd> <kbd>→</kbd> vagy <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> vezetés,
-        <kbd>Szóköz</kbd> kézifék, <kbd>R</kbd> vissza az útra, <kbd>C</kbd> kamera, <kbd>M</kbd> hang, <kbd>Esc</kbd> menü
+        <kbd>Szóköz</kbd> kézifék, <kbd>R</kbd> vissza az útra, <kbd>Backspace</kbd> újraindítás, <kbd>C</kbd> kamera, <kbd>M</kbd> hang, <kbd>Esc</kbd> menü
       </div>
     </div>
   </div>
@@ -332,6 +334,7 @@ body.touch #hud,#touch{-webkit-user-select:none;user-select:none;-webkit-touch-c
 <div id="hud" hidden>
   <div class="hud-top">
     <div class="tplate"><span class="c" id="hStage">GY1</span><span class="tm" id="hTime">0:00,00</span></div>
+    <button class="hrestart" id="hRestart" tabindex="-1" aria-label="Futam újraindítása">↻ Újra</button>
     <div id="hDelta"></div>
   </div>
   <div class="street" id="hStreet"></div>
@@ -343,7 +346,7 @@ body.touch #hud,#touch{-webkit-user-select:none;user-select:none;-webkit-touch-c
   </div>
   <div class="speedo"><em id="hGear">1</em><b id="hSpd">0</b><span>km/h</span></div>
   <div id="count"></div>
-  <div class="hint" id="hint">Szóköz: kézifék a hajtűkben. R: vissza az útra.</div>
+  <div class="hint" id="hint">Szóköz: kézifék a hajtűkben. R: vissza az útra. Backspace: újraindítás.</div>
 </div>
 
 <div id="finish" class="screen" hidden>
@@ -523,7 +526,8 @@ function saveLocal(){try{localStorage.setItem(LKEY,JSON.stringify(local))}catch(
 const canvas=$('#c');
 const renderer=new THREE.WebGLRenderer({canvas,antialias:true,powerPreference:'high-performance'});
 const coarse=matchMedia('(pointer: coarse)').matches;
-renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,coarse?1.5:2));
+const prBase=Math.min(window.devicePixelRatio||1,coarse?1.5:2),prMin=prBase>1?Math.max(1,prBase*.5):prBase*.75;let prCur=prBase;
+renderer.setPixelRatio(prCur);
 const scene=new THREE.Scene();
 const camera=new THREE.PerspectiveCamera(64,1,0.3,900);
 const hemi=new THREE.HemisphereLight(0xffffff,0x445533,0.8); scene.add(hemi);
@@ -764,6 +768,7 @@ function buildWorld(st){
   const {N,X,Z,H,Y,W,SF,heightAt,nearest,insideBld}=T;
   const group=new THREE.Group(); scene.add(group);
   scene.background=new THREE.Color(st.sky); scene.fog=new THREE.Fog(st.sky,st.fog[0],st.fog[1]);
+  camera.far=st.fog[1]+40;camera.updateProjectionMatrix(); // a köd mögött úgysem látszik semmi
   hemi.color.setHex(0xffffff); hemi.groundColor.setHex(st.ground[0]); hemi.intensity=0.75*st.light; sun.intensity=0.7*st.light;
   const nz=makeNoise(st.seed+3), r=mulberry32(st.seed*31+5);
 
@@ -821,7 +826,6 @@ function buildWorld(st){
   // trees
   const dummy=new THREE.Object3D();
   const coneGeo=new THREE.ConeGeometry(1,1,7),trunkGeo=new THREE.CylinderGeometry(.18,.25,1,5);
-  const treeMats=st.tree.map(c=>new THREE.MeshLambertMaterial({color:c}));
   const trunkMat=new THREE.MeshLambertMaterial({color:st.trunk});
   const nT=st.trees; const tA=[],tB=[],balls=[];
   if(T.landAt){
@@ -844,20 +848,29 @@ function buildWorld(st){
     const y=heightAt(x,z), hgt=st.poplar?(r()<.6?13+r()*8:6+r()*4):st.road==='tarmac'?5+r()*5:8+r()*8, rad=st.poplar?.9+r()*.6:st.road==='tarmac'?1.6+r()*1.4:1.5+r()*1.4;
     (r()<.5?tA:tB).push([x,y,z,hgt,rad]);
   }
-  [tA,tB].forEach((arr,ix)=>{
-    const cones=new THREE.InstancedMesh(coneGeo,treeMats[ix],arr.length), trunks=new THREE.InstancedMesh(trunkGeo,trunkMat,arr.length);
-    const caps=st.snowcap?new THREE.InstancedMesh(coneGeo,new THREE.MeshLambertMaterial({color:0xF4F7FA}),arr.length):null;
-    arr.forEach((t,n)=>{const [x,y,z,hgt,rad]=t;
-      dummy.position.set(x,y+hgt*0.2+hgt*0.4,z);dummy.rotation.set(0,n,0);dummy.scale.set(rad,hgt*0.8,rad);dummy.updateMatrix();cones.setMatrixAt(n,dummy.matrix);
-      dummy.position.set(x,y+hgt*0.12,z);dummy.scale.set(1,hgt*0.25,1);dummy.updateMatrix();trunks.setMatrixAt(n,dummy.matrix);
-      if(caps){dummy.position.set(x,y+hgt*0.2+hgt*0.62,z);dummy.scale.set(rad*.62,hgt*0.36,rad*.62);dummy.updateMatrix();caps.setMatrixAt(n,dummy.matrix)}});
-    group.add(cones,trunks); if(caps)group.add(caps);
-  });
-  if(balls.length){const bg=new THREE.IcosahedronGeometry(1,1);
-    [0,1].forEach(ix=>{const arr=balls.filter((b,n)=>n%2===ix);if(!arr.length)return;
-      const cm=new THREE.InstancedMesh(bg,new THREE.MeshLambertMaterial({color:ix?0x4E7A34:0x5C8A3A}),arr.length),tm=new THREE.InstancedMesh(trunkGeo,trunkMat,arr.length);
-      arr.forEach((t,n)=>{const [x,y,z,hgt,rad]=t;dummy.rotation.set(0,n,0);dummy.position.set(x,y+hgt-rad*.9,z);dummy.scale.set(rad,rad*.95,rad);dummy.updateMatrix();cm.setMatrixAt(n,dummy.matrix);
-        dummy.position.set(x,y+(hgt-rad)/2,z);dummy.scale.set(1,Math.max(.5,hgt-rad),1);dummy.updateMatrix();tm.setMatrixAt(n,dummy.matrix)});group.add(cm,tm)})}
+  // fák: egy fajtához (korona/törzs/hósapka) területi csoportonként egy InstancedMesh; a csoportoknak saját befoglaló gömbje van,
+  // így a látótérből kilógó csoportokat a vágás kihagyja (az r128 InstancedMesh-t magától sosem vágja)
+  const kinds={cone:[],ball:[],trunk:[],cap:[]},tc2=new THREE.Color();
+  const put=(kind,x,z,rad,col)=>{dummy.updateMatrix();kinds[kind].push({x,z,r:rad,m:dummy.matrix.clone(),c:col})};
+  [tA,tB].forEach((arr,ix)=>arr.forEach((t,n)=>{const [x,y,z,hgt,rad]=t;
+    dummy.position.set(x,y+hgt*0.2+hgt*0.4,z);dummy.rotation.set(0,n,0);dummy.scale.set(rad,hgt*0.8,rad);put('cone',x,z,hgt,st.tree[ix]);
+    dummy.position.set(x,y+hgt*0.12,z);dummy.scale.set(1,hgt*0.25,1);put('trunk',x,z,hgt,null);
+    if(st.snowcap){dummy.position.set(x,y+hgt*0.2+hgt*0.62,z);dummy.scale.set(rad*.62,hgt*0.36,rad*.62);put('cap',x,z,hgt,null)}}));
+  balls.forEach((t,n)=>{const [x,y,z,hgt,rad]=t;dummy.rotation.set(0,n,0);dummy.position.set(x,y+hgt-rad*.9,z);dummy.scale.set(rad,rad*.95,rad);put('ball',x,z,hgt,n%2?0x4E7A34:0x5C8A3A);
+    dummy.position.set(x,y+(hgt-rad)/2,z);dummy.scale.set(1,Math.max(.5,hgt-rad),1);put('trunk',x,z,hgt,null)});
+  {let x0=Infinity,x1=-Infinity,z0=Infinity,z1=-Infinity;for(const k in kinds)for(const it of kinds[k]){x0=Math.min(x0,it.x);x1=Math.max(x1,it.x);z0=Math.min(z0,it.z);z1=Math.max(z1,it.z)}
+    const cell=Math.max(140,Math.sqrt((x1-x0)*(z1-z0)/36)||0);
+    const spec={cone:[coneGeo,new THREE.MeshLambertMaterial({color:0xffffff})],ball:[new THREE.IcosahedronGeometry(1,1),new THREE.MeshLambertMaterial({color:0xffffff})],
+      trunk:[trunkGeo,trunkMat],cap:[coneGeo,new THREE.MeshLambertMaterial({color:0xF4F7FA})]};
+    for(const k in kinds){const list=kinds[k];if(!list.length)continue;const [geo,mat]=spec[k],cells=new Map();
+      for(const it of list){const key=Math.floor(it.x/cell)+','+Math.floor(it.z/cell);let c=cells.get(key);if(!c)cells.set(key,c=[]);c.push(it)}
+      for(const arr of cells.values()){let cx=0,cz=0;for(const it of arr){cx+=it.x;cz+=it.z}cx/=arr.length;cz/=arr.length;let rr=0,cy=0;
+        for(const it of arr){rr=Math.max(rr,Math.hypot(it.x-cx,it.z-cz)+it.r);cy+=it.m.elements[13]}cy/=arr.length;
+        const g=new THREE.BufferGeometry();g.setIndex(geo.index);for(const a in geo.attributes)g.setAttribute(a,geo.attributes[a]);
+        g.boundingSphere=new THREE.Sphere(new THREE.Vector3(cx,cy,cz),rr+20);
+        const im=new THREE.InstancedMesh(g,mat,arr.length);im.frustumCulled=true;
+        arr.forEach((it,n)=>{im.setMatrixAt(n,it.m);if(it.c!==null)im.setColorAt(n,tc2.setHex(it.c).multiplyScalar(.92+((n*37)%17)/100))});
+        group.add(im)}}}
   if(st.env){
     const E=st.env;
     // draped ribbon helper
@@ -1266,6 +1279,7 @@ async function loadGhost(){
   try{const v=await api('ghost?stage='+encodeURIComponent(st.id)+'&nick='+encodeURIComponent(row.nick));if(v&&Array.isArray(v.d))ghost={d:v.d,t:v.t,splits:Array.isArray(v.splits)?v.splits:[],look:Object.assign({livery:'none'},row.look)}}catch(e){}
 }
 
+let raceRun=0;
 async function startRace(){
   if(!curP()||!curP().nick){openWho(true);return}
   initAudio();
@@ -1279,8 +1293,8 @@ async function startRace(){
   carMesh=makeCar(local.look,false);carMesh.userData.body.position.y=tune.ride;scene.add(carMesh);
   placeCar(12);maxS=12;raceTime=0;splitsHit=[];rec=[];recT=0.1;noteIdx=0;spIdx=0;deltaT=0;shake=0;
   $('#hDelta').className='';$('#pMe').style.background=local.look.color;
-  state='countdown';countT=3.999;lastCount=-1;
-  await loadGhost();
+  state='countdown';countT=3.999;lastCount=-1;txtCache.clear();
+  const run=++raceRun;await loadGhost();if(run!==raceRun)return;
   if(ghost&&state!=='menu'){ghostMesh=makeCar(ghost.look,true);scene.add(ghostMesh);$('#pGhost').hidden=false;$('#pGhost').style.background=ghost.look.color||'#888'}else $('#pGhost').hidden=true;
   camH=car.h;camPos.set(car.x-Math.sin(car.h)*8,car.y+4,car.z-Math.cos(car.h)*8);
   $('#hint').hidden=false;setTimeout(()=>{$('#hint').hidden=true},9000);
@@ -1375,8 +1389,15 @@ function physStep(dt){
 
 /* ================= main loop ================= */
 let last=performance.now(),acc=0,lastCount=-1,camH=0;const camPos=new THREE.Vector3(),look=new THREE.Vector3();
+// alkalmazkodó felbontás: ha tartósan akad (40 fps alatt), kisebb pixelaránnyal rajzolunk, ha bőven bírja, visszaállunk
+let pfAcc=0,pfN=0,pfGood=0;
+function perfTick(raw){if(document.hidden||raw>250)return;pfAcc+=raw;pfN++;if(pfN<90)return;const avg=pfAcc/pfN;pfAcc=pfN=0;let to=prCur;
+  if(avg>25&&prCur>prMin){to=Math.max(prMin,prCur-.25);pfGood=0}else if(avg<17.5){if(++pfGood>=4&&prCur<prBase){to=Math.min(prBase,prCur+.25);pfGood=0}}else pfGood=0;
+  if(to!==prCur){prCur=to;renderer.setPixelRatio(prCur);resize()}}
+const txtCache=new Map();function setTxt(sel,v){v=String(v);if(txtCache.get(sel)!==v){txtCache.set(sel,v);$(sel).textContent=v}}
+function setLeft(sel,f){const v=(f*100).toFixed(1)+'%';if(txtCache.get(sel+'@')!==v){txtCache.set(sel+'@',v);$(sel).style.left=v}}
 function frame(now){
-  requestAnimationFrame(frame);
+  requestAnimationFrame(frame);perfTick(now-last);
   let dt=Math.min(0.05,(now-last)/1000);last=now;
   if(!T){renderer.render(scene,camera);return}
   if(state==='menu'||state==='import'){menuFly(dt);renderer.render(scene,camera);return}
@@ -1418,14 +1439,14 @@ function frame(now){
     if(i0>=n-1){i0=n-2}const a=i0*3,b=a+3;
     if(n>=2){const gx=ghost.d[a]+(ghost.d[b]-ghost.d[a])*f,gz=ghost.d[a+1]+(ghost.d[b+1]-ghost.d[a+1])*f;let dh=ghost.d[b+2]-ghost.d[a+2];const gh=ghost.d[a+2]+dh*f;
       ghostMesh.position.set(gx,T.heightAt(gx,gz),gz);ghostMesh.rotation.set(0,gh,0);ghostMesh.visible=true;
-      T.nearest(gx,gz,gq);if(gq.d!==Infinity)$('#pGhost').style.left=(clamp(gq.s/T.L,0,1)*100)+'%';
+      T.nearest(gx,gz,gq);if(gq.d!==Infinity)setLeft('#pGhost',clamp(gq.s/T.L,0,1));
       ghostMesh.userData.wheels.forEach(w=>{w.w.rotation.x+=dt*20})}}
   // HUD
   if(state==='race'||state==='countdown'){
-    $('#hTime').textContent=fmt(raceTime*1000);
-    const kmh=Math.round(sp*3.6);$('#hSpd').textContent=kmh;
-    const gears=[0,30,55,80,108,135];let gr=1;for(let k=1;k<gears.length;k++)if(kmh>gears[k])gr=k+1;$('#hGear').textContent=c.vF<-0.5?'R':gr;
-    $('#pMe').style.left=(clamp(maxS/T.L,0,1)*100)+'%';drawMinimap();
+    setTxt('#hTime',fmt(raceTime*1000));
+    const kmh=Math.round(sp*3.6);setTxt('#hSpd',kmh);
+    const gears=[0,30,55,80,108,135];let gr=1;for(let k=1;k<gears.length;k++)if(kmh>gears[k])gr=k+1;setTxt('#hGear',c.vF<-0.5?'R':gr);
+    setLeft('#pMe',clamp(maxS/T.L,0,1));drawMinimap();
     {const sn=st.real?((nq.nm>=0&&st.streets[nq.nm])||(nq.sf===1?'Földút':'Névtelen utca')):'';const el=$('#hStreet');if(el.textContent!==sn)el.textContent=sn}
     if(deltaT>0){deltaT-=dt;if(deltaT<=0)$('#hDelta').className=''}
     // pace notes
@@ -1555,6 +1576,7 @@ addEventListener('keydown',e=>{
   if(state==='import'){if(e.code==='Escape')closeImporter();return}
   if(state==='finish'){if(e.code==='Escape'){toMenu()}else if(e.code==='KeyR'){e.preventDefault();startRace()}return}
   const k=KEYMAP[e.code];if(k){input[k]=true;e.preventDefault()}
+  if(e.code==='Backspace'&&(state==='race'||state==='countdown')){e.preventDefault();startRace();return}
   if(e.code==='KeyR'&&state==='race'){T.nearest(car.x,car.z,nq);if(nq.d!==Infinity)placeCar(nq.s)}
   if(e.code==='KeyC')camMode=1-camMode;
   if(e.code==='KeyM'){const v=!soundOn;$('#optSound').checked=v;setSound(v);SET.sound=v;saveSet()}
@@ -1562,6 +1584,7 @@ addEventListener('keydown',e=>{
 });
 addEventListener('keyup',e=>{const k=KEYMAP[e.code];if(k)input[k]=false});
 addEventListener('blur',()=>{for(const k in input)input[k]=false});
+$('#hRestart').addEventListener('pointerdown',e=>e.preventDefault());$('#hRestart').onclick=()=>{if(state==='race'||state==='countdown')startRace()};
 $('#go').onclick=startRace;$('#again').onclick=startRace;$('#toMenu').onclick=toMenu;$('#tMenu').onclick=toMenu;
 
 // telefonon teljes képernyő és fekvő tájolás, ahol a böngésző engedi (iPhone Safari nem)
