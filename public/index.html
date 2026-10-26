@@ -144,6 +144,25 @@ ol.times .gap{font-size:13px;color:var(--board-muted);font-variant-numeric:tabul
 #touch .b-menu{right:calc(env(safe-area-inset-right,0px) + 14px);top:calc(env(safe-area-inset-top,0px) + 196px);width:auto;height:auto;border-radius:4px;padding:6px 12px;font-size:16px}
 body.touch .speedo{bottom:calc(env(safe-area-inset-bottom,0px) + 222px)}
 body.touch .hint{display:none}
+body.touch #hud,#touch{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+/* fekvő telefon: alacsony képernyő, minden elem a saját sávjában */
+@media (pointer:coarse) and (max-height:520px) and (orientation:landscape){
+  #touch .b-l,#touch .b-r{width:92px;height:92px;bottom:calc(env(safe-area-inset-bottom,0px) + 14px)}
+  #touch .b-r{left:calc(env(safe-area-inset-left,0px) + 116px)}
+  #touch .b-up{right:calc(env(safe-area-inset-right,0px) + 14px);bottom:calc(env(safe-area-inset-bottom,0px) + 14px);width:100px;height:100px}
+  #touch .b-dn{right:calc(env(safe-area-inset-right,0px) + 124px);bottom:calc(env(safe-area-inset-bottom,0px) + 14px);width:84px;height:84px}
+  #touch .b-hb{right:calc(env(safe-area-inset-right,0px) + 26px);bottom:calc(env(safe-area-inset-bottom,0px) + 124px);width:76px;height:76px;font-size:15px}
+  #touch .b-menu{right:auto;left:calc(env(safe-area-inset-left,0px) + 14px);top:calc(env(safe-area-inset-top,0px) + 112px)}
+  #mini{width:96px;height:96px;top:calc(env(safe-area-inset-top,0px) + 14px)}
+  .hud-top{right:calc(env(safe-area-inset-right,0px) + 120px)}
+  .tplate .c{font-size:18px} .tplate .tm{font-size:24px;min-width:100px} #hDelta{font-size:22px}
+  .prog{top:calc(env(safe-area-inset-top,0px) + 54px);width:min(240px,40vw)}
+  .street{top:calc(env(safe-area-inset-top,0px) + 68px);font-size:17px}
+  .note{top:calc(env(safe-area-inset-top,0px) + 10px);padding:4px 12px 4px 8px} .note b{font-size:26px} .note small{font-size:14px} .note svg{width:28px;height:28px}
+  body.touch .speedo{right:auto;left:calc(env(safe-area-inset-left,0px) + 64px);bottom:calc(env(safe-area-inset-bottom,0px) + 118px);text-align:left}
+  #count{font-size:min(30vh,120px)}
+  .speedo b{font-size:44px} .speedo span{font-size:14px} .speedo em{width:32px;height:32px;font-size:24px;left:-42px;top:2px}
+}
 
 .stage.add{grid-template-columns:auto 1fr;background:rgba(251,251,248,.14);color:#fff;border:2px dashed rgba(255,255,255,.55);border-left-width:2px;box-shadow:none}
 .stage.add .code{background:#fff;color:#14182B}
@@ -503,7 +522,8 @@ function saveLocal(){try{localStorage.setItem(LKEY,JSON.stringify(local))}catch(
 /* ================= three setup ================= */
 const canvas=$('#c');
 const renderer=new THREE.WebGLRenderer({canvas,antialias:true,powerPreference:'high-performance'});
-renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
+const coarse=matchMedia('(pointer: coarse)').matches;
+renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,coarse?1.5:2));
 const scene=new THREE.Scene();
 const camera=new THREE.PerspectiveCamera(64,1,0.3,900);
 const hemi=new THREE.HemisphereLight(0xffffff,0x445533,0.8); scene.add(hemi);
@@ -1249,7 +1269,8 @@ async function loadGhost(){
 async function startRace(){
   if(!curP()||!curP().nick){openWho(true);return}
   initAudio();
-  if('speechSynthesis' in window)try{speechSynthesis.cancel()}catch(e){}
+  if('speechSynthesis' in window)try{speechSynthesis.cancel();if(coarse){const u=new SpeechSynthesisUtterance(' ');u.volume=0;speechSynthesis.speak(u)}}catch(e){}
+  if(coarse)goFullscreen();
   closeGarageView();
   hideScreens();$('#finish').hidden=true;$('#garage').hidden=true;$('#hud').hidden=false;
   const st=STAGES[stageIx];$('#hStage').textContent=st.code;$('#hTime').textContent=fmt(0);
@@ -1543,10 +1564,25 @@ addEventListener('keyup',e=>{const k=KEYMAP[e.code];if(k)input[k]=false});
 addEventListener('blur',()=>{for(const k in input)input[k]=false});
 $('#go').onclick=startRace;$('#again').onclick=startRace;$('#toMenu').onclick=toMenu;$('#tMenu').onclick=toMenu;
 
-if(matchMedia('(pointer: coarse)').matches){
+// telefonon teljes képernyő és fekvő tájolás, ahol a böngésző engedi (iPhone Safari nem)
+function goFullscreen(){const d=document.documentElement,rf=d.requestFullscreen||d.webkitRequestFullscreen;
+  if(!rf||document.fullscreenElement||document.webkitFullscreenElement)return;
+  try{const pr=rf.call(d,{navigationUI:'hide'});const lock=()=>{try{const o=screen.orientation;if(o&&o.lock)o.lock('landscape').catch(()=>{})}catch(e){}};
+    if(pr&&pr.then)pr.then(lock).catch(()=>{});else lock()}catch(e){}}
+document.addEventListener('visibilitychange',()=>{if(!ac)return;if(document.hidden){for(const k in input)input[k]=false;ac.suspend().catch(()=>{})}else if(state==='race'||state==='countdown')ac.resume().catch(()=>{})});
+if(coarse){
   document.body.classList.add('touch');const tp=$('#touch');
+  // kormány: a két gomb egy sávként működik, az ujjat át lehet húzni egyikről a másikra
+  const bl=tp.querySelector('.b-l'),br=tp.querySelector('.b-r');
+  const steer=e=>{const a=bl.getBoundingClientRect(),b=br.getBoundingClientRect(),mid=(a.right+b.left)/2;const L=e.clientX<mid;
+    input.left=L;input.right=!L;bl.classList.toggle('on',L);br.classList.toggle('on',!L)};
+  let steerId=null;const steerOff=e=>{if(e&&e.pointerId!==steerId)return;steerId=null;input.left=input.right=false;bl.classList.remove('on');br.classList.remove('on')};
+  [bl,br].forEach(b=>{b.addEventListener('pointerdown',e=>{e.preventDefault();steerId=e.pointerId;try{b.setPointerCapture(e.pointerId)}catch(_){}steer(e)});
+    b.addEventListener('pointermove',e=>{if(e.pointerId===steerId)steer(e)});
+    b.addEventListener('pointerup',steerOff);b.addEventListener('pointercancel',steerOff);b.addEventListener('lostpointercapture',steerOff);
+    b.addEventListener('contextmenu',e=>e.preventDefault())});
   const show=()=>{tp.hidden=!(state==='race'||state==='countdown')};setInterval(show,250);
-  tp.querySelectorAll('button[data-k]').forEach(b=>{const k=b.dataset.k;
+  tp.querySelectorAll('button[data-k]:not(.b-l):not(.b-r)').forEach(b=>{const k=b.dataset.k;
     const on=e=>{e.preventDefault();input[k]=true;b.classList.add('on');try{b.setPointerCapture(e.pointerId)}catch(_){}};
     const offf=e=>{input[k]=false;b.classList.remove('on')};
     b.addEventListener('pointerdown',on);b.addEventListener('pointerup',offf);b.addEventListener('pointercancel',offf);b.addEventListener('lostpointercapture',offf);
