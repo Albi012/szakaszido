@@ -33,4 +33,15 @@ Fontos: a sima „drag and drop” feltöltés (Netlify Drop) nem telepíti a sz
 
 - Minden név csak egyszer szerepelhet. A nevet az a böngésző birtokolja, ahol először megadták.
 - A szerver ellenőrzi a beküldött meneteket: reális-e az idő, a rajtnál kezdődik és a célnál ér-e véget, nincs-e benne ugrás.
-- Egy-egy bejegyzést a Netlify felületén, a projekt Blobs részében lehet törölni (`players` és `ghosts` tároló).
+- Egy-egy bejegyzést a Netlify felületén, a projekt Blobs részében lehet törölni (`players`, `ghosts` és `daily` tároló).
+
+## Napi kihívás
+
+- Minden nap (budapesti idő szerint) egy szakasz és egy időjárás (napos, eső vagy alkony) a kihívás, mindenkinek ugyanaz. A játék és a szerver ugyanabból a dátumból, ugyanazzal a képlettel számolja.
+- `GET /api/daily`: a mai kihívás és a napi ranglista. `POST /api/daily`: napi idő beküldése; a szerver ugyanúgy ellenőrzi a menetet, mint a sima ranglistánál, és csak a mai (éjfél után még 6 óráig a tegnapi) kihívást fogadja el.
+- A napi idők a `daily` tárolóban vannak, `dátum/név` kulccsal.
+
+## Megosztás
+
+- A célképernyőn a Megosztás gomb képet készít az eredményről, és a telefon megosztó menüjét nyitja meg. Ahol ez nincs, letölti a képet, és a linket a vágólapra másolja.
+- A `?szakasz=r_iklad` link a szakaszválasztóra, a `?napi=1` link a napi kihívásra visz.

@@ -6,6 +6,17 @@ import { createHash, timingSafeEqual } from "node:crypto";
 const STAGES = {"r_iklad": {"len": 2174, "end": [1097.7, 150.6]}, "r_domony": {"len": 2587, "end": [291.3, -233.5]}, "r_aszod": {"len": 2085, "end": [793.1, -185.6]}, "r_dunakeszi": {"len": 2458, "end": [670.6, 332.7]}, "r_fot": {"len": 2776, "end": [-594.9, -1442.0]}};
 const MAX_PLAYERS = 500;
 
+// Napi kihívás: a budapesti dátumból számolt szakasz és körülmény (a játék ugyanezzel a képlettel számol)
+const DAILY_STAGES = ["r_iklad", "r_domony", "r_aszod", "r_dunakeszi", "r_fot"];
+const DAILY_CONDS = ["dry", "rain", "dusk"];
+const budapestDate = (ms) => new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Budapest" }).format(new Date(ms));
+function dailyFor(date) {
+  let h = 2166136261;
+  for (let i = 0; i < date.length; i++) { h ^= date.charCodeAt(i); h = Math.imul(h, 16777619); }
+  h >>>= 0;
+  return { date, stage: DAILY_STAGES[h % DAILY_STAGES.length], cond: DAILY_CONDS[(h >>> 8) % DAILY_CONDS.length] };
+}
+
 const json = (obj, status = 200) =>
   new Response(JSON.stringify(obj), {
     status,
@@ -27,6 +38,7 @@ function cleanLook(l) {
   const one = (v, opts, d) => (opts.includes(v) ? v : d);
   l = l && typeof l === "object" ? l : {};
   return {
+    model: one(l.model, ["hatch", "sedan", "retro", "mini"], "hatch"),
     color: hex(l.color, "#E2231A"),
     color2: hex(l.color2, "#F2F2EE"),
     rim: hex(l.rim, "#F2F2EE"),
@@ -53,6 +65,12 @@ function validRun(stage, t, d, splits) {
   return null;
 }
 
+async function dailyBoard(daily, date) {
+  const { blobs } = await daily.list({ prefix: date + "/" });
+  const out = await Promise.all(blobs.map((b) => daily.get(b.key, { type: "json" })));
+  return out.filter(Boolean).map((e) => ({ nick: e.nick, t: e.t, look: e.look || {} })).sort((a, b) => a.t - b.t);
+}
+
 async function board(players) {
   const { blobs } = await players.list();
   const out = await Promise.all(
@@ -69,9 +87,15 @@ export default async (req) => {
   const route = url.pathname.replace(/^\/api\/?/, "");
   const players = getStore({ name: "players", consistency: "strong" });
   const ghosts = getStore({ name: "ghosts", consistency: "strong" });
+  const daily = getStore({ name: "daily", consistency: "strong" });
 
   try {
     if (req.method === "GET" && route === "board") return json({ players: await board(players) });
+
+    if (req.method === "GET" && route === "daily") {
+      const d = dailyFor(budapestDate(Date.now()));
+      return json({ ...d, rows: await dailyBoard(daily, d.date) });
+    }
 
     if (req.method === "GET" && route === "ghost") {
       const stage = url.searchParams.get("stage"), nick = cleanNick(url.searchParams.get("nick"));
@@ -129,6 +153,26 @@ export default async (req) => {
       }
       await players.setJSON(key, p);
       return json({ ok: true, improved, players: await board(players) });
+    }
+
+    if (route === "daily") {
+      // a tegnapi dátum is elfogadott, ha a menet éjfél előtt indult
+      const { date, stage, cond, t, d, splits } = body;
+      const now = Date.now(), okDates = [budapestDate(now), budapestDate(now - 6 * 3600 * 1000)];
+      if (typeof date !== "string" || !okDates.includes(date)) return bad("Ez a napi kihívás már lejárt.");
+      const want = dailyFor(date);
+      if (stage !== want.stage || cond !== want.cond) return bad("Nem a mai kihívás szakasza.");
+      const err = validRun(stage, t, d, splits);
+      if (err) return bad(err);
+      const p = await ensure();
+      p.nick = nick;
+      p.look = cleanLook(body.look);
+      await players.setJSON(key, p);
+      const dk = date + "/" + key, prev = await daily.get(dk, { type: "json" });
+      const improved = !prev || t < prev.t;
+      if (improved) await daily.setJSON(dk, { nick, t, look: p.look, at: now });
+      const rows = await dailyBoard(daily, date);
+      return json({ ok: true, improved, date, rows, rank: rows.findIndex((r) => r.nick.toLowerCase() === nick.toLowerCase()) + 1 });
     }
 
     return bad("Ismeretlen végpont.", 404);
