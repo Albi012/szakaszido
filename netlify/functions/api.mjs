@@ -38,6 +38,7 @@ function cleanLook(l) {
   const one = (v, opts, d) => (opts.includes(v) ? v : d);
   l = l && typeof l === "object" ? l : {};
   return {
+    model: one(l.model, ["hatch", "sedan", "retro", "mini"], "hatch"),
     color: hex(l.color, "#E2231A"),
     color2: hex(l.color2, "#F2F2EE"),
     rim: hex(l.rim, "#F2F2EE"),

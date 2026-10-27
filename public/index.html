@@ -411,6 +411,8 @@ body.touch #hud,#touch{-webkit-user-select:none;user-select:none;-webkit-touch-c
   <div class="gpanel" role="dialog" aria-labelledby="gTitle">
     <header><h2 id="gTitle">Garázs</h2><p>A kinézet minden szakaszon ugyanaz, a beállítást szakaszonként mented. A barátaid a szellemautódat is így látják.</p></header>
     <div class="gscroll">
+      <h3>Autó</h3>
+      <fieldset><legend>Típus</legend><div class="seg" id="gModel" role="radiogroup" aria-label="Autó típusa"></div><p class="small" id="gModelDesc"></p></fieldset>
       <h3>Kinézet</h3>
       <fieldset><legend>Fő szín</legend><div class="swatches" id="sw1" role="radiogroup" aria-label="Fő szín"></div></fieldset>
       <fieldset><legend>Matrica</legend><div class="seg" id="gLivery" role="radiogroup" aria-label="Matrica"></div></fieldset>
@@ -536,7 +538,7 @@ const COLORS=['#E2231A','#1D5BD6','#FFC400','#F2F2EE','#14935A','#FF6A13'];
 const LKEY='szakaszido.v1';
 let local={times:{},ghosts:{},color:COLORS[0],look:null,setups:{}};
 try{const v=JSON.parse(localStorage.getItem(LKEY)||'null'); if(v&&typeof v==='object') local=Object.assign(local,v);}catch(e){}
-const DEFAULT_LOOK={color:COLORS[0],color2:'#F2F2EE',livery:'stripes',wing:'wrc',rim:'#F2F2EE',pod:false,num:7};
+const DEFAULT_LOOK={model:'hatch',color:COLORS[0],color2:'#F2F2EE',livery:'stripes',wing:'wrc',rim:'#F2F2EE',pod:false,num:7};
 local.look=Object.assign({},DEFAULT_LOOK,{color:local.color||COLORS[0]},local.look||{});
 if(!local.setups||typeof local.setups!=='object')local.setups={};
 if(!Array.isArray(local.tracks))local.tracks=[];
@@ -558,17 +560,20 @@ const TUNES=[
 ];
 function defaultSetup(st){return {tire:st.road,gear:0,susp:0,steer:0,bias:0,hb:0}}
 function getSetup(st){return Object.assign(defaultSetup(st),local.setups[st.id]||{})}
-function computeTune(st,s){
+function computeTuneBase(st,s){
   const g=s.gear/2,su=s.susp/2,sr=s.steer/2,b=s.bias/2,h=s.hb/2,lk=st.road==='snow'?'snow':'gravel',TG=TIREGRIP[s.tire]||TIREGRIP.gravel;
   const gT=1.05*TG.tarmac*(1+su*0.06),gL=(lk==='snow'?.58:.8)*TG[lk]*(1-su*0.06),vT=52*(1+g*0.1),vL=(lk==='snow'?41:45)*(1+g*0.1);
   return {grip:st.road==='tarmac'?gT:gL,gripS:[gT,gL],vmaxS:[vT,vL],offGrip:0.62-su*0.08,
     accel:12.5*(1-g*0.16),vmax:st.road==='tarmac'?vT:vL,steerRate:4.2*(1+sr*0.4),yawK:1+sr*0.13,
     brakeYaw:1+b*0.32,brakeLat:1-b*0.2,hbYaw:1.6*(1+h*0.28),hbLat:1.25*(1-h*0.32),hbDecel:3.5*(1+h*0.6),ride:-su*0.07};
 }
+// az autótípus enyhén módosítja a menettulajdonságokat
+function computeTune(st,s){const t=computeTuneBase(st,s),m=(CAR_MODELS[local.look&&local.look.model]||CAR_MODELS.hatch).tune;
+  t.accel*=m.accel;t.vmax*=m.vmax;t.vmaxS=t.vmaxS.map(v=>v*m.vmax);t.grip*=m.grip;t.gripS=t.gripS.map(v=>v*m.grip);t.steerRate*=m.steer;t.yawK*=m.steer;t.hbYaw*=m.hb;return t}
 function tuneStats(st,tn){
   const tr=Math.min(1,0.45+tn.grip*0.6);let v=0,t=0,t100=null;
   for(let i=0;i<6000;i++){const a=tn.accel*Math.max(0,1-(v/tn.vmax)*(v/tn.vmax))*tr-v*0.1;v+=a*0.01;t+=0.01;if(t100===null&&v>=27.78)t100=t;if(a<0.002)break}
-  return {top:Math.round(v*3.6),t100,grip:Math.round(tn.grip/computeTune(st,defaultSetup(st)).grip*100)};
+  return {top:Math.round(v*3.6),t100,grip:Math.round(tn.grip/computeTuneBase(st,defaultSetup(st)).grip*100)};
 }
 function saveLocal(){try{localStorage.setItem(LKEY,JSON.stringify(local))}catch(e){}}
 
@@ -1067,78 +1072,120 @@ function drawMinimap(){
 function numTex(n){return canvasTex(128,128,(g,w,h)=>{g.fillStyle='#fff';g.beginPath();g.arc(64,64,58,0,Math.PI*2);g.fill();g.lineWidth=6;g.strokeStyle='#14182B';g.stroke();
   g.fillStyle='#14182B';g.font='italic 900 78px "Barlow Condensed", Arial Narrow, sans-serif';g.textAlign='center';g.textBaseline='middle';g.fillText(String(n),61,70)})}
 function disposeObj(o){if(!o)return;scene.remove(o);o.traverse(m=>{if(m.geometry)m.geometry.dispose();if(m.material){(Array.isArray(m.material)?m.material:[m.material]).forEach(x=>{if(x.map)x.map.dispose();x.dispose()})}})}
-// rally ferdehátú: kiterjesztett, lekerekített élű oldalprofilokból (hossz z mentén, előre +z), részletekkel
-const CAR_BODY=[[-2.0,.30],[-1.73,.30],null,[0.87,.30],null,[1.95,.30],[2.06,.40],[2.08,.58],[2.02,.70],[1.55,.84],[0.98,.88],[-1.55,.88],[-1.98,.86],[-2.05,.62],[-2.03,.36]];
-const CAR_CABIN=[[-1.54,.86],[0.95,.86],[0.12,1.36],[-1.18,1.38]],CAR_ROOF=[[0.17,1.31],[0.08,1.40],[-1.16,1.42],[-1.25,1.31]];
-function carExtrude(pts,depth,bev,arches){const sh=new THREE.Shape();let first=true;
-  for(const q of pts){if(q===null){const cx=arches.shift();sh.absarc(cx,.34,.43,Math.PI,0,true);continue}first?sh.moveTo(q[0],q[1]):sh.lineTo(q[0],q[1]);first=false}
+// autótípusok: oldalprofilok (hossz z mentén, előre +z; null = kerékív) és a részletek helye
+const CAR_MODELS={
+  hatch:{name:'Ferdehátú',desc:'Kiegyensúlyozott, mindenhol jól megy.',tune:{accel:1,vmax:1,grip:1,steer:1,hb:1},
+    wz:1.3,wr:.34,wx:.86,bodyW:1.70,cabW:1.36,roofW:1.42,F:2.07,R:-2.05,
+    body:[[-2.0,.30],[-1.73,.30],null,[0.87,.30],null,[1.95,.30],[2.06,.40],[2.08,.58],[2.02,.70],[1.55,.84],[0.98,.88],[-1.55,.88],[-1.98,.86],[-2.05,.62],[-2.03,.36]],
+    cabin:[[-1.54,.86],[0.95,.86],[0.12,1.36],[-1.18,1.38]],roof:[[0.17,1.31],[0.08,1.40],[-1.16,1.42],[-1.25,1.31]],
+    A:[[0.95,.86],[0.12,1.36]],C:[[-1.54,.86],[-1.18,1.38]],Bz:-.45,roofTop:1.437,roofZ:[-1.16,0.08],hood:[[0.98,.905],[1.55,.865],[2.02,.725]],
+    mirror:[.78,1.0],handles:[-.2,.55],lamp:{y:.665,x:.6,w:.42},tail:{y:.74,x:.66,w:.3,h:.2},grilleY:.57,
+    wing:{y:1.52,z:-1.42,base:1.38},low:{y:1.43,z:-1.3,tilt:.12},vent:-.15,num:{y:.6,z:.12},roofNum:-.62,pod:{z:1.7,y:.9}},
+  sedan:{name:'Szedán',desc:'Hosszú és stabil: nagyobb végsebesség, lomhább kanyarodás.',tune:{accel:.97,vmax:1.06,grip:1.02,steer:.9,hb:.92},
+    wz:1.38,wr:.34,wx:.87,bodyW:1.72,cabW:1.36,roofW:1.42,F:2.28,R:-2.26,
+    body:[[-2.22,.30],[-1.81,.30],null,[0.95,.30],null,[2.15,.30],[2.26,.40],[2.28,.58],[2.22,.70],[1.72,.83],[1.05,.875],[-1.35,.88],[-2.12,.90],[-2.24,.84],[-2.26,.60],[-2.24,.36]],
+    cabin:[[-1.42,.86],[1.05,.86],[0.22,1.33],[-0.88,1.35]],roof:[[0.27,1.29],[0.18,1.37],[-0.86,1.39],[-0.95,1.29]],
+    A:[[1.05,.86],[0.22,1.33]],C:[[-1.42,.86],[-0.88,1.35]],Bz:-.3,roofTop:1.405,roofZ:[-0.86,0.18],hood:[[1.05,.895],[1.72,.85],[2.22,.72]],
+    mirror:[.88,.98],handles:[-.55,.35],lamp:{y:.66,x:.62,w:.46},tail:{y:.76,x:.66,w:.42,h:.14},grilleY:.57,
+    wing:{y:1.14,z:-1.98,base:.9},low:{y:.95,z:-2.12,tilt:.2},vent:-.2,num:{y:.6,z:0},roofNum:-.35,pod:{z:1.85,y:.89}},
+  retro:{name:'Klasszikus',desc:'Hetvenes évekbeli kupé: könnyen kifarol, a kézifékkel látványos.',tune:{accel:.94,vmax:.97,grip:.95,steer:1.05,hb:1.15},
+    wz:1.25,wr:.31,wx:.8,bodyW:1.58,cabW:1.30,roofW:1.36,F:2.05,R:-2.05,round:true,chrome:true,
+    body:[[-2.0,.30],[-1.65,.30],null,[0.85,.30],null,[1.95,.30],[2.03,.36],[2.05,.74],[1.0,.80],[-1.45,.81],[-2.0,.80],[-2.05,.70],[-2.04,.36]],
+    cabin:[[-1.45,.79],[0.85,.79],[0.38,1.30],[-1.0,1.31]],roof:[[0.42,1.26],[0.36,1.34],[-0.98,1.35],[-1.04,1.26]],
+    A:[[0.85,.79],[0.38,1.30]],C:[[-1.45,.79],[-1.0,1.31]],Bz:-.35,roofTop:1.367,roofZ:[-0.98,0.36],hood:[[1.0,.825],[2.0,.77]],
+    mirror:[.7,.95],handles:[-.3],lamp:{y:.6,x:.55,r:.1},tail:{y:.66,x:.6,w:.34,h:.14},grilleY:.6,
+    wing:{y:1.06,z:-1.82,base:.81},low:{y:.86,z:-1.97,tilt:.35},vent:null,num:{y:.56,z:-.1},roofNum:-.3,pod:{z:1.7,y:.84}},
+  mini:{name:'Kisautó',desc:'Kicsi és fürge: jól gyorsul és fordul, de hamar eléri a végsebességét.',tune:{accel:1.06,vmax:.92,grip:.98,steer:1.12,hb:1.05},
+    wz:1.05,wr:.29,wx:.74,bodyW:1.46,cabW:1.26,roofW:1.32,F:1.75,R:-1.76,round:true,
+    body:[[-1.72,.28],[-1.43,.28],null,[0.67,.28],null,[1.62,.28],[1.73,.36],[1.75,.58],[1.64,.72],[1.2,.80],[0.75,.84],[-1.62,.84],[-1.74,.78],[-1.76,.36]],
+    cabin:[[-1.6,.82],[0.75,.82],[0.25,1.36],[-1.5,1.38]],roof:[[0.29,1.32],[0.22,1.41],[-1.5,1.43],[-1.56,1.32]],
+    A:[[0.75,.82],[0.25,1.36]],C:[[-1.6,.82],[-1.5,1.38]],Bz:-.5,roofTop:1.447,roofZ:[-1.5,0.22],hood:[[0.78,.865],[1.2,.825],[1.64,.745]],
+    mirror:[.6,.98],handles:[-.25],lamp:{y:.62,x:.52,r:.1},tail:{y:.7,x:.56,w:.2,h:.24},grilleY:.56,
+    wing:{y:1.53,z:-1.45,base:1.43},low:{y:1.46,z:-1.5,tilt:.15},vent:null,num:{y:.56,z:-.2},roofNum:-.65,pod:{z:1.4,y:.86}}
+};
+const CAR_KEYS=Object.keys(CAR_MODELS);
+function carModel(look){return CAR_MODELS[look&&look.model]||CAR_MODELS.hatch}
+function carExtrude(pts,depth,bev,arches){const sh=new THREE.Shape();let first=true;arches=arches?arches.slice():[];
+  for(const q of pts){if(q===null){const a=arches.shift();sh.absarc(a[0],a[1],a[2],Math.PI,0,true);continue}first?sh.moveTo(q[0],q[1]):sh.lineTo(q[0],q[1]);first=false}
   const g=new THREE.ExtrudeGeometry(sh,{depth,bevelEnabled:true,bevelThickness:bev,bevelSize:bev*.8,bevelSegments:3,curveSegments:14,steps:1});
   g.rotateY(-Math.PI/2);g.translate(depth/2,0,0);g.computeVertexNormals();return g}
-let carGeoCache=null;
-function carGeos(){if(carGeoCache)return carGeoCache;
-  const wheelT=new THREE.CylinderGeometry(.34,.34,.26,22);wheelT.rotateZ(Math.PI/2);
-  const rimG=new THREE.CylinderGeometry(.22,.22,.27,18);rimG.rotateZ(Math.PI/2);
-  const discG=new THREE.CylinderGeometry(.18,.18,.02,16);discG.rotateZ(Math.PI/2);
-  const flare=new THREE.TorusGeometry(.45,.055,6,16,Math.PI);flare.rotateY(Math.PI/2);
+const carGeoCache={};
+function carGeos(M){const key=CAR_KEYS.find(k=>CAR_MODELS[k]===M)||'hatch';if(carGeoCache[key])return carGeoCache[key];
+  const wr=M.wr,ar=wr+.09;
+  const wheelT=new THREE.CylinderGeometry(wr,wr,.26,22);wheelT.rotateZ(Math.PI/2);
+  const rimG=new THREE.CylinderGeometry(wr*.65,wr*.65,.27,18);rimG.rotateZ(Math.PI/2);
+  const discG=new THREE.CylinderGeometry(wr*.53,wr*.53,.02,16);discG.rotateZ(Math.PI/2);
+  const flare=new THREE.TorusGeometry(ar+.02,.055,6,16,Math.PI);flare.rotateY(Math.PI/2);
   const fog=new THREE.CylinderGeometry(.075,.075,.05,14);fog.rotateX(Math.PI/2);
+  const roundL=new THREE.CylinderGeometry(1,1,.06,18);roundL.rotateX(Math.PI/2);
   const pipe=new THREE.CylinderGeometry(.05,.055,.22,10);pipe.rotateX(Math.PI/2);
-  const lip=new THREE.TorusGeometry(.205,.022,6,22);lip.rotateY(Math.PI/2);
-  return carGeoCache={lip,spoke:new THREE.BoxGeometry(.03,.19,.055),body:carExtrude(CAR_BODY,1.70,.05,[-1.3,1.3]),cabin:carExtrude(CAR_CABIN,1.36,.07),roof:carExtrude(CAR_ROOF,1.42,.03),wheelT,rimG,discG,flare,fog,pipe}}
+  const lip=new THREE.TorusGeometry(wr*.6,.022,6,22);lip.rotateY(Math.PI/2);
+  return carGeoCache[key]={lip,spoke:new THREE.BoxGeometry(.03,wr*.56,.055),wheelT,rimG,discG,flare,fog,roundL,pipe,
+    body:carExtrude(M.body,M.bodyW,.05,[[-M.wz,wr,ar],[M.wz,wr,ar]]),cabin:carExtrude(M.cabin,M.cabW,.07),roof:carExtrude(M.roof,M.roofW,.03)}}
 function makeCar(look,ghost){
-  look=Object.assign({},DEFAULT_LOOK,look||{});const G=carGeos();
+  look=Object.assign({},DEFAULT_LOOK,look||{});const M=carModel(look),G=carGeos(M);
   const g=new THREE.Group(), body=new THREE.Group(); g.add(body);
   const gh=ghost?{transparent:true,opacity:.38,depthWrite:false}:{};
   const mk=(c,o)=>new THREE.MeshLambertMaterial(Object.assign({color:c},gh,o||{}));
   const mkP=(c,sh,spec,o)=>new THREE.MeshPhongMaterial(Object.assign({color:c,shininess:sh,specular:spec},gh,o||{}));
   const paint=mkP(look.color,70,0x3a3a3a), c2=mkP(look.color2,70,0x3a3a3a), dark=mk(0x1C1F28), plastic=mkP(0x24272F,20,0x161616), glass=mkP(0x1E2836,110,0x8899aa),
-    tire=mk(0x141518), rim=mkP(look.rim,60,0x555555), rimIn=mk(0x34373E), metal=mkP(0x8C9096,80,0x666666), red=mk(0xC81E1E), lamp=mkP(0xF3F1E6,120,0xffffff,ghost?{}:{emissive:0x5a5440}),
-    tail=mkP(0xB3121A,90,0x884444,ghost?{}:{emissive:0x3a0505}), white=mk(0xF4F4F0);
+    tire=mk(0x141518), rim=mkP(look.rim,60,0x555555), rimIn=mk(0x34373E), metal=mkP(0x8C9096,80,0x666666), chrome=mkP(0xD6DADF,140,0xffffff), red=mk(0xC81E1E),
+    lamp=mkP(0xF3F1E6,120,0xffffff,ghost?{}:{emissive:0x5a5440}), tail=mkP(0xB3121A,90,0x884444,ghost?{}:{emissive:0x3a0505}), white=mk(0xF4F4F0);
   const add=(geo,mat,x,y,z,p)=>{const m=new THREE.Mesh(geo,mat);m.position.set(x,y,z);(p||body).add(m);return m};
   const box=(w,h,d,mat,x,y,z,p)=>add(new THREE.BoxGeometry(w,h,d),mat,x,y,z,p);
   const along=(a,b,w,t,mat,x)=>{const dz=b[0]-a[0],dy=b[1]-a[1],L=Math.hypot(dz,dy);const m=box(w,t,L,mat,x,(a[1]+b[1])/2,(a[0]+b[0])/2);m.rotation.x=-Math.atan2(dy,dz);return m};
-  const split=look.livery==='split',top=split?c2:paint;
+  const split=look.livery==='split',top=split?c2:paint,SX=M.bodyW/2+.05,PX=M.cabW/2+.065,F=M.F,R=M.R,belt=M.A[0][1];
+  const trim=M.chrome?chrome:plastic;
   // karosszéria, utastér (üveg), tető és oszlopok
   add(G.body,paint,0,0,0);add(G.cabin,glass,0,0,0);add(G.roof,top,0,0,0);
-  [-1,1].forEach(sd=>{const x=sd*.745;
-    along([0.95,.86],[0.12,1.36],.07,.07,top,x);along([-1.54,.86],[-1.18,1.38],.09,.08,top,x);box(.07,.5,.11,top,x,1.11,-.45);
-    box(.05,.09,2.3,plastic,sd*.9,.33,0);                                   // küszöb
-    box(.02,.03,.15,dark,sd*.905,.8,-.2);box(.02,.03,.15,dark,sd*.905,.8,.55); // kilincsek
-    const mr=box(.14,.1,.2,top,sd*.95,1.0,.78);mr.rotation.y=sd*.15;box(.1,.03,.05,dark,sd*.87,.97,.82); // tükör
-    [-1.3,1.3].forEach(z=>{add(G.flare,plastic,sd*.86,.34,z);box(.3,.24,.025,look.livery==='none'?dark:c2,sd*.7,.2,z-.5)})}); // ívek, sárfogók
+  [-1,1].forEach(sd=>{const x=sd*PX;
+    along(M.A[0],M.A[1],.07,.07,top,x);along(M.C[0],M.C[1],.09,.08,top,x);box(.07,M.A[1][1]-belt,.11,top,x,(belt+M.A[1][1])/2,M.Bz);
+    box(.05,.09,M.wz*2-.5,M.chrome?chrome:plastic,sd*SX,.33,0);                                        // küszöb
+    M.handles.forEach(z=>box(.02,.03,.15,M.chrome?chrome:dark,sd*(SX+.005),belt-.08,z));               // kilincsek
+    const mr=box(.14,.1,.2,M.chrome?chrome:top,sd*(SX+.05),M.mirror[1],M.mirror[0]);mr.rotation.y=sd*.15;box(.1,.03,.05,dark,sd*(SX-.03),M.mirror[1]-.03,M.mirror[0]+.04); // tükör
+    [-M.wz,M.wz].forEach(z=>{if(!M.chrome)add(G.flare,plastic,sd*(M.wx),M.wr,z);box(.3,.24,.025,look.livery==='none'?dark:c2,sd*(M.wx-.16),.2,z-M.wr-.16)})}); // ívek, sárfogók
   // elöl: lökhárító, rács, fényszórók, ködlámpák
-  box(1.84,.16,.26,split?c2:plastic,0,.36,1.96);box(1.0,.15,.04,dark,0,.57,2.075);box(.8,.08,.04,dark,0,.42,2.09);
-  [-1,1].forEach(sd=>{const l=box(.42,.13,.07,lamp,sd*.6,.665,2.03);l.rotation.y=-sd*.18;add(G.fog,lamp,sd*.62,.42,2.07)});
-  // hátul: lökhárító, lámpák, rendszám, kipufogó
-  box(1.84,.18,.22,split?c2:plastic,0,.37,-1.98);box(.5,.12,.02,white,0,.53,-2.06);add(G.pipe,metal,.55,.31,-2.08);
-  [-1,1].forEach(sd=>box(.3,.2,.05,tail,sd*.66,.74,-2.04));
-  box(.32,.06,.26,dark,0,1.45,-.15);                                         // tetőlégbeömlő
+  if(M.chrome){box(M.bodyW+.16,.08,.08,chrome,0,.37,F+.03);box(M.bodyW+.16,.08,.08,chrome,0,.37,R-.03)}
+  else{box(M.bodyW+.14,.16,.26,split?c2:plastic,0,.36,F-.11);box(M.bodyW+.14,.18,.22,split?c2:plastic,0,.37,R+.07)}
+  box(M.round?M.lamp.x*2-.3:1.0,.15,.04,dark,0,M.grilleY,F+.005);
+  if(!M.round)box(.8,.08,.04,dark,0,.42,F+.02);
+  [-1,1].forEach(sd=>{
+    if(M.round){const rl=(x,r)=>{const bz=add(G.roundL,M.chrome?chrome:dark,x,M.lamp.y,F-.012);bz.scale.set(r*1.3,r*1.3,1);const l=add(G.roundL,lamp,x,M.lamp.y,F+.004);l.scale.set(r,r,1)};
+      rl(sd*M.lamp.x,M.lamp.r);if(M.chrome)rl(sd*(M.lamp.x+.22),M.lamp.r*.8)}
+    else{const l=box(M.lamp.w,.13,.07,lamp,sd*M.lamp.x,M.lamp.y,F-.04);l.rotation.y=-sd*.18;add(G.fog,lamp,sd*(M.lamp.x+.02),.42,F)}
+    box(M.tail.w,M.tail.h,.05,tail,sd*M.tail.x,M.tail.y,R+.01)});
+  // hátul: rendszám, kipufogó
+  box(.5,.12,.02,white,0,.53,R-.01);add(G.pipe,metal,M.bodyW*.32,.31,R-.03);
+  if(M.vent!==null)box(.32,.06,.26,dark,0,M.roofTop+.01,M.vent);                     // tetőlégbeömlő
   // matricák
-  if(look.livery==='stripes')[-.2,.2].forEach(x=>{along([0.98,.905],[1.55,.865],.18,.012,c2,x);along([1.55,.865],[2.02,.725],.18,.012,c2,x);box(.18,.012,1.22,c2,x,1.437,-.54)});
-  if(look.livery==='band')[-1,1].forEach(sd=>{box(.02,.16,1.66,c2,sd*.908,.62,0);box(.02,.1,.5,c2,sd*.908,.83,1.55);box(.02,.1,.42,c2,sd*.908,.83,-1.68)});
-  if(split)[-1,1].forEach(sd=>box(.02,.1,3.0,c2,sd*.908,.82,-.25));
+  if(look.livery==='stripes')[-.2,.2].forEach(x=>{for(let i=0;i+1<M.hood.length;i++)along(M.hood[i],M.hood[i+1],.18,.012,c2,x);box(.18,.012,M.roofZ[1]-M.roofZ[0],c2,x,M.roofTop,(M.roofZ[0]+M.roofZ[1])/2)});
+  if(look.livery==='band')[-1,1].forEach(sd=>{const a=M.wz-M.wr-.12;box(.02,.16,a*2,c2,sd*(SX+.008),.62,0)});
+  if(split)[-1,1].forEach(sd=>box(.02,.1,(M.wz+M.wr)*2,c2,sd*(SX+.008),belt-.06,0));
   // szárny
-  if(look.wing==='wrc'){const wm=look.livery==='none'?dark:c2;box(1.72,.06,.4,wm,0,1.52,-1.42);[.86,-.86].forEach(x=>box(.05,.22,.46,wm,x,1.5,-1.42));[.5,-.5].forEach(x=>box(.06,.14,.08,dark,x,1.44,-1.3))}
-  else if(look.wing==='low'){const m=box(1.42,.05,.3,look.livery==='none'?paint:c2,0,1.43,-1.3);m.rotation.x=.12}
+  if(look.wing==='wrc'){const wm=look.livery==='none'?dark:c2,W=M.wing;box(M.bodyW,.06,.4,wm,0,W.y,W.z);[1,-1].forEach(sd=>box(.05,.22,.46,wm,sd*M.bodyW/2,W.y-.02,W.z));
+    [.5,-.5].forEach(x=>box(.06,W.y-W.base,.08,dark,x*M.bodyW/1.7,(W.y+W.base)/2,W.z+.08))}
+  else if(look.wing==='low'){const m=box(M.roofW,.05,.3,look.livery==='none'?paint:c2,0,M.low.y,M.low.z);m.rotation.x=M.low.tilt}
   // lámpasor a motorháztetőn
-  if(look.pod){box(1.04,.06,.08,dark,0,.9,1.7);const lg=new THREE.CylinderGeometry(.085,.085,.08,14);lg.rotateX(Math.PI/2);
-    [-.38,-.13,.13,.38].forEach(x=>{add(lg,dark,x,.96,1.72);add(new THREE.CircleGeometry(.075,14),mk(0xFFE7A0,ghost?{}:{emissive:0x8a6a10}),x,.96,1.765)})}
+  if(look.pod){box(1.04,.06,.08,dark,0,M.pod.y,M.pod.z);const lg=new THREE.CylinderGeometry(.085,.085,.08,14);lg.rotateX(Math.PI/2);
+    [-.38,-.13,.13,.38].forEach(x=>{add(lg,dark,x,M.pod.y+.06,M.pod.z+.02);add(new THREE.CircleGeometry(.075,14),mk(0xFFE7A0,ghost?{}:{emissive:0x8a6a10}),x,M.pod.y+.06,M.pod.z+.065)})}
   // rajtszám az ajtókon és a tetőn
   const nm=new THREE.MeshLambertMaterial(Object.assign({map:numTex(clamp(Math.round(+look.num)||1,1,99)),transparent:true,alphaTest:.4},ghost?{opacity:.38,depthWrite:false}:{}));
   const pg=new THREE.PlaneGeometry(.56,.56);
-  const n1=add(pg,nm,.917,.6,.12);n1.rotation.y=Math.PI/2;const n2=add(pg,nm,-.917,.6,.12);n2.rotation.y=-Math.PI/2;
-  const n3=add(new THREE.PlaneGeometry(.5,.5),nm,0,1.444,-.62);n3.rotation.x=-Math.PI/2;
+  const n1=add(pg,nm,SX+.017,M.num.y,M.num.z);n1.rotation.y=Math.PI/2;const n2=add(pg,nm,-SX-.017,M.num.y,M.num.z);n2.rotation.y=-Math.PI/2;
+  const n3=add(new THREE.PlaneGeometry(.5,.5),nm,0,M.roofTop+.007,M.roofNum);n3.rotation.x=-Math.PI/2;
   // kerekek: gumi, küllős felni, féktárcsa (forog), féknyereg (nem forog)
   const wheels=[];
-  [[.86,1.3],[-.86,1.3],[.86,-1.3],[-.86,-1.3]].forEach(([x,z],n)=>{const sd=Math.sign(x),piv=new THREE.Group();piv.position.set(x,.34,z);g.add(piv);
-    const w=new THREE.Mesh(G.wheelT,tire);piv.add(w);const r=new THREE.Mesh(G.rimG,rimIn);w.add(r);const lip=new THREE.Mesh(G.lip,rim);lip.position.x=sd*.135;w.add(lip);
+  [[M.wx,M.wz],[-M.wx,M.wz],[M.wx,-M.wz],[-M.wx,-M.wz]].forEach(([x,z],n)=>{const sd=Math.sign(x),piv=new THREE.Group();piv.position.set(x,M.wr,z);g.add(piv);
+    const w=new THREE.Mesh(G.wheelT,tire);piv.add(w);const r=new THREE.Mesh(G.rimG,rimIn);w.add(r);const lp=new THREE.Mesh(G.lip,rim);lp.position.x=sd*.135;w.add(lp);
     const ds=new THREE.Mesh(G.discG,metal);ds.position.x=-sd*.03;w.add(ds);
-    for(let k=0;k<5;k++){const sg=new THREE.Group();sg.rotation.x=k*Math.PI*2/5;const sp=new THREE.Mesh(G.spoke,rim);sp.position.set(sd*.14,.1,0);sg.add(sp);w.add(sg)}
+    for(let k=0;k<5;k++){const sg=new THREE.Group();sg.rotation.x=k*Math.PI*2/5;const sp=new THREE.Mesh(G.spoke,rim);sp.position.set(sd*.14,M.wr*.3,0);sg.add(sp);w.add(sg)}
     const hub=new THREE.Mesh(new THREE.CylinderGeometry(.05,.05,.03,10),dark);hub.rotation.z=Math.PI/2;hub.position.x=sd*.145;w.add(hub);
-    const cal=new THREE.Mesh(new THREE.BoxGeometry(.06,.11,.13),red);cal.position.set(sd*.06,.13,z>0?-.07:.07);piv.add(cal);
+    const cal=new THREE.Mesh(new THREE.BoxGeometry(.06,.11,.13),red);cal.position.set(sd*.06,M.wr*.38,z>0?-.07:.07);piv.add(cal);
     wheels.push({piv,w,front:n<2})});
-  if(!ghost){const sh=new THREE.Mesh(new THREE.PlaneGeometry(2.6,4.8),new THREE.MeshBasicMaterial({map:canvasTex(64,128,(c,w,h)=>{const gr=c.createRadialGradient(w/2,h/2,4,w/2,h/2,w/2);gr.addColorStop(0,'rgba(0,0,0,.55)');gr.addColorStop(1,'rgba(0,0,0,0)');c.save();c.scale(1,2);c.fillStyle=gr;c.fillRect(0,0,w,h);c.restore()}),transparent:true,depthWrite:false}));
-    sh.rotation.x=-Math.PI/2;sh.position.y=.06;g.add(sh)}
-  g.userData={body,wheels,lamps:{front:[[.6,.665,2.07],[-.6,.665,2.07]],rear:[[.66,.74,-2.07],[-.66,.74,-2.07]]}};
+  if(!ghost){const sh=new THREE.Mesh(new THREE.PlaneGeometry(M.bodyW+.9,F-R+.75),new THREE.MeshBasicMaterial({map:canvasTex(64,128,(c,w,h)=>{const gr=c.createRadialGradient(w/2,h/2,4,w/2,h/2,w/2);gr.addColorStop(0,'rgba(0,0,0,.55)');gr.addColorStop(1,'rgba(0,0,0,0)');c.save();c.scale(1,2);c.fillStyle=gr;c.fillRect(0,0,w,h);c.restore()}),transparent:true,depthWrite:false}));
+    sh.rotation.x=-Math.PI/2;sh.position.set(0,.06,(F+R)/2);g.add(sh)}
+  const fl=M.round?M.lamp.x:M.lamp.x;
+  g.userData={body,wheels,lamps:{front:[[fl,M.lamp.y,F+.04],[-fl,M.lamp.y,F+.04]],rear:[[M.tail.x,M.tail.y,R-.03],[-M.tail.x,M.tail.y,R-.03]]},model:M};
   return g;
 }
 
@@ -1349,7 +1396,7 @@ function renderAll(){
   $('#delTrack').hidden=!(st.custom&&(!online||st.owner===myId));
   $('#go').textContent='Rajt: '+st.code+' '+st.name;
   {const gs=$('#ghostSum');if(gs)gs.textContent='Szellemautó: '+({best:'a pályacsúcs menete',mine:'a saját legjobb meneted',none:'kikapcsolva'})[ghostMode]+'. A Beállításokban módosíthatod.'}
-  const su=getSetup(st);$('#carSum').textContent='Rajtszám '+local.look.num+', '+TIRE_FULL[su.tire]+' a '+st.name+' szakaszon.';
+  const su=getSetup(st);$('#carSum').textContent=carModel(local.look).name+', rajtszám '+local.look.num+', '+TIRE_FULL[su.tire]+' '+azA(st.name)+' '+st.name+' szakaszon.';
 }
 const SET=Object.assign({voice:true,sound:true,ghost:'best',cam:0,vibe:true,cond:'dry'},local.settings||{});local.settings=SET;
 voiceOn=SET.voice;soundOn=SET.sound;
@@ -1776,6 +1823,8 @@ function refreshGarageCar(){if(state!=='garage')return;disposeObj(carMesh);const
 function poseGarageCar(){const c=car;carMesh.position.set(c.x,T.heightAt(c.x,c.z),c.z);carMesh.rotation.set(0,c.h,0)}
 function renderGarage(){
   const L=local.look,st=STAGES[stageIx];
+  segGroup($('#gModel'),'model',CAR_KEYS.map(k=>[k,CAR_MODELS[k].name]),L.model||'hatch',v=>{L.model=v;$('#gModelDesc').textContent=CAR_MODELS[v].desc;saveLook();renderStats()});
+  $('#gModelDesc').textContent=carModel(L).desc;
   swatchGroup($('#sw1'),L.color,c=>{L.color=c;saveLook()});
   swatchGroup($('#sw2'),L.color2,c=>{L.color2=c;saveLook()});
   segGroup($('#gLivery'),'livery',[['none','Nincs'],['stripes','Csíkok'],['band','Oldalcsík'],['split','Kéttónusú']],L.livery,v=>{L.livery=v;saveLook()});
