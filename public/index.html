@@ -1034,7 +1034,15 @@ function initAudio(){
     const buf=ac.createBuffer(1,ac.sampleRate*2,ac.sampleRate);const d=buf.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;
     const ns=ac.createBufferSource();ns.buffer=buf;ns.loop=true;const nf=ac.createBiquadFilter();nf.type='bandpass';nf.frequency.value=900;nf.Q.value=.7;const ng=ac.createGain();ng.gain.value=0;
     ns.connect(nf);nf.connect(ng);ng.connect(master);ns.start();
-    au={master,o1,o2,f,eg,ng,nf,buf};
+    // kavicscsúszás: ritka, gyorsan lecsengő kavicskoppanások halk zajjal keverve, hurkolva
+    const sr=ac.sampleRate,gb=ac.createBuffer(1,Math.floor(sr*1.5),sr),gd=gb.getChannelData(0),kd=Math.exp(-1/(sr*.0025));let env=0,amp=0,lp=0,pk=0;
+    for(let i=0;i<gd.length;i++){if(Math.random()<.0035){env=1;amp=.35+Math.random()*.9}env*=kd;
+      const x=(Math.random()*2-1)*(env*amp+.14);lp+=(x-lp)*.55;gd[i]=lp;pk=Math.max(pk,Math.abs(lp))}
+    for(let i=0;i<gd.length;i++)gd[i]*=.9/pk;
+    const gs=ac.createBufferSource();gs.buffer=gb;gs.loop=true;const ghp=ac.createBiquadFilter();ghp.type='highpass';ghp.frequency.value=240;
+    const glp=ac.createBiquadFilter();glp.type='lowpass';glp.frequency.value=2800;glp.Q.value=.6;const sg=ac.createGain();sg.gain.value=0;
+    gs.connect(ghp);ghp.connect(glp);glp.connect(sg);sg.connect(master);gs.start();
+    au={master,o1,o2,f,eg,ng,nf,buf,gs,glp,sg};
   }catch(e){ac=null;au=null}
 }
 function beep(freq,dur){if(!au)return;const o=ac.createOscillator(),g=ac.createGain();o.type='square';o.frequency.value=freq;g.gain.setValueAtTime(.18,ac.currentTime);g.gain.exponentialRampToValueAtTime(.001,ac.currentTime+dur);o.connect(g);g.connect(au.master);o.start();o.stop(ac.currentTime+dur)}
@@ -1303,7 +1311,7 @@ function toMenu(scr){
   closeGarageView();
   state='menu';$('#hud').hidden=true;$('#finish').hidden=true;$('#garage').hidden=true;showScreen(typeof scr==='string'?scr:'menu');
   disposeObj(carMesh);carMesh=null;disposeObj(ghostMesh);ghostMesh=null;
-  if(au)au.eg.gain.setTargetAtTime(0,ac.currentTime,.1),au.ng.gain.setTargetAtTime(0,ac.currentTime,.1);
+  if(au)au.eg.gain.setTargetAtTime(0,ac.currentTime,.1),au.ng.gain.setTargetAtTime(0,ac.currentTime,.1),au.sg.gain.setTargetAtTime(0,ac.currentTime,.1);
   if('speechSynthesis' in window)try{speechSynthesis.cancel()}catch(e){}
   menuS=Math.max(0,maxS-60);renderAll();
 }
@@ -1464,7 +1472,13 @@ function frame(now){
     const fr=45+rpm*150;au.o1.frequency.setTargetAtTime(fr,ac.currentTime,.03);au.o2.frequency.setTargetAtTime(fr*0.5,ac.currentTime,.03);
     au.f.frequency.setTargetAtTime(500+rpm*1400+(input.up?400:0),ac.currentTime,.05);
     au.eg.gain.setTargetAtTime(state==='finish'?0.02:0.07+(input.up?0.06:0),ac.currentTime,.05);
-    au.ng.gain.setTargetAtTime(Math.min(.35,(loose?sp*0.006:0)+slide*0.025),ac.currentTime,.08);au.nf.frequency.value=loose?700:1800}
+    au.ng.gain.setTargetAtTime(Math.min(.35,loose?sp*0.006:slide*0.025),ac.currentTime,.08);au.nf.frequency.value=loose?700:1800;
+    // kavics: oldalcsúszás, kézifék, fékezés és kipörgés laza talajon; füvön tompább, havon mélyebb
+    const t=ac.currentTime,racing=state==='race'||state==='finish',grass=offr&&nq.sf!==1,snow=STAGES[stageIx].road==='snow'&&!grass;
+    let scrub=0;if(loose&&racing){scrub=Math.max(0,slide-.8);if(input.hb&&sp>2)scrub+=3;if(input.down&&sp>6)scrub+=2;if(input.up&&sp<7&&state==='race')scrub+=2.5*(1-sp/7)}
+    const gAmt=Math.min(.55,scrub*.045)*Math.min(1,(sp+slide)/4)*(grass?.55:1);
+    au.sg.gain.setTargetAtTime(gAmt*(.85+Math.random()*.3),t,.06);au.gs.playbackRate.setTargetAtTime(.75+Math.min(.7,(sp+slide)/40),t,.1);
+    au.glp.frequency.setTargetAtTime(snow?1300:grass?1800:2800+Math.min(2200,slide*120),t,.1)}
   // camera
   updateCamera(dt);
   renderer.render(scene,camera);
