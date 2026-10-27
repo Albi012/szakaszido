@@ -531,7 +531,8 @@ const THEME_LABEL={gravel:'Murva, erdő',snow:'Hó, fenyves',tarmac:'Aszfalt, t�
 function hashStr(t){let h=2166136261;for(let i=0;i<t.length;i++){h^=t.charCodeAt(i);h=Math.imul(h,16777619)}return (h>>>0)%100000+1}
 function makeCustomStage(t,i){const th=THEMES[t.theme]||THEMES.gravel;
   return Object.assign({},th,{id:t.id,code:'GY'+(BUILTIN.length+i+1),name:t.name,surf:THEME_LABEL[t.theme]||THEME_LABEL.gravel,len:t.len,custom:true,pts:t.pts,owner:t.owner||null,seed:hashStr(t.id)})}
-const LAND_COL={1:0xC8B572,2:0x34552A,3:0x7E9E4C,4:0x8DB356,5:0x6E7E3A,6:0x3F82B2,7:0x9C9A90,8:0x8E8C84};
+// 8 = az utak menti sáv: füves padka, nem szürke beton (a 6 m-es rácson szögletes szürke foltként folyt ki az utak mellé)
+const LAND_COL={1:0xC8B572,2:0x34552A,3:0x7E9E4C,4:0x8DB356,5:0x6E7E3A,6:0x3F82B2,7:0x93A066,8:0x7F9B4E};
 const COLORS=['#E2231A','#1D5BD6','#FFC400','#F2F2EE','#14935A','#FF6A13'];
 
 /* ================= persistence (local) ================= */
@@ -579,8 +580,9 @@ function saveLocal(){try{localStorage.setItem(LKEY,JSON.stringify(local))}catch(
 
 /* ================= three setup ================= */
 const canvas=$('#c');
-const renderer=new THREE.WebGLRenderer({canvas,antialias:true,powerPreference:'high-performance'});
 const coarse=matchMedia('(pointer: coarse)').matches;
+// nagy pixelsűrűségű telefonon az élsimítás alig látszik, de sokat lassít a grafikus chipen
+const renderer=new THREE.WebGLRenderer({canvas,antialias:!(coarse&&(window.devicePixelRatio||1)>=2),powerPreference:'high-performance'});
 const prBase=Math.min(window.devicePixelRatio||1,coarse?1.5:2),prMin=prBase>1?Math.max(1,prBase*.5):prBase*.75;let prCur=prBase;
 renderer.setPixelRatio(prCur);
 const scene=new THREE.Scene();
@@ -718,21 +720,30 @@ function buildTrack(st){
   return {st,N,X,Z,H,Y,W,SF,NM,L:(N-1)*STEP,nearest,heightAt,terr,notes,BL,bldNear,insideBld,landAt};
 }
 
-function canvasTex(w,h,draw){const c=document.createElement('canvas');c.width=w;c.height=h;draw(c.getContext('2d'),w,h);const t=new THREE.CanvasTexture(c);t.anisotropy=maxAniso;return t}
-function roadTexture(kind){
+function canvasTex(w,h,draw){const c=document.createElement('canvas');c.width=w;c.height=h;draw(c.getContext('2d'),w,h);const t=new THREE.CanvasTexture(c);t.anisotropy=maxAniso;t.userData=t.userData||{}; // r128: a textúrának még nincs userData mezője
+  t.userData.redraw=()=>{const g=c.getContext('2d');g.clearRect(0,0,w,h);draw(g,w,h);t.needsUpdate=true};return t}
+const fontTex=t=>{t.userData.font=true;return t};
+// a pályától független, procedurális textúrák egyszer készülnek el, és minden pálya újrahasznosítja őket (a world eldobásakor sem szabadulnak fel)
+const texCache=new Map();function cachedTex(key,make){let t=texCache.get(key);if(!t){t=make();t.userData.keep=true;texCache.set(key,t)}return t}
+function roadTexture(kind){return cachedTex('road:'+kind,()=>makeRoadTexture(kind))}
+function makeRoadTexture(kind){
   const r=mulberry32(99);
   const t=canvasTex(256,256,(g,w,h)=>{
-    const base={gravel:'#9C8462',snow:'#E4EAF0',tarmac:'#4A4D53'}[kind]; g.fillStyle=base;g.fillRect(0,0,w,h);
+    const base={gravel:'#9C8462',snow:'#E4EAF0',tarmac:'#4A4D53',street:'#575A60'}[kind]; g.fillStyle=base;g.fillRect(0,0,w,h);
     const sp=kind==='gravel'?[[70,55,38],[190,170,135],[120,100,75]]:kind==='snow'?[[200,210,222],[255,255,255],[175,190,205]]:[[60,62,66],[95,97,102],[40,42,45]];
     for(let i=0;i<9000;i++){const c=sp[(r()*3)|0];g.fillStyle=`rgba(${c[0]},${c[1]},${c[2]},${0.25+r()*0.5})`;g.fillRect(r()*w,r()*h,1+r()*2.5,1+r()*2.5)}
-    if(kind!=='tarmac'){g.fillStyle=kind==='gravel'?'rgba(70,52,34,.22)':'rgba(150,168,190,.35)';g.fillRect(w*.22,0,w*.12,h);g.fillRect(w*.66,0,w*.12,h)}
+    if(kind==='street'){// falusi utca: felfestés nélkül, foltozásokkal és kopott széllel
+      for(let i=0;i<7;i++){g.fillStyle=`rgba(${r()<.5?30:80},${r()<.5?32:82},${r()<.5?36:86},.35)`;g.fillRect(w*(.1+r()*.6),r()*h,w*(.1+r()*.25),h*(.05+r()*.12))}
+      g.fillStyle='rgba(120,110,90,.35)';g.fillRect(0,0,10,h);g.fillRect(w-10,0,10,h)}
+    if(kind!=='tarmac'&&kind!=='street'){g.fillStyle=kind==='gravel'?'rgba(70,52,34,.22)':'rgba(150,168,190,.35)';g.fillRect(w*.22,0,w*.12,h);g.fillRect(w*.66,0,w*.12,h)}
     if(kind==='gravel'){g.fillStyle='rgba(85,105,55,.4)';g.fillRect(0,0,8,h);g.fillRect(w-8,0,8,h)}
     if(kind==='tarmac'){g.fillStyle='#EDEDE6';g.fillRect(10,0,6,h);g.fillRect(w-16,0,6,h);g.fillRect(w/2-3,0,6,h*.45)}
   });
   t.wrapS=t.wrapT=THREE.RepeatWrapping; return t;
 }
 // talaj részlet-textúra: semleges világosság-szórás, a színt a csúcsszínek adják
-function groundTexture(kind,seed){
+function groundTexture(kind){return cachedTex('ground:'+kind,()=>makeGroundTexture(kind,7))}
+function makeGroundTexture(kind,seed){
   const r=mulberry32(seed*7+(kind==='field'?11:1));
   const t=canvasTex(256,256,(g,w,h)=>{g.fillStyle='#EDEDE8';g.fillRect(0,0,w,h);
     for(let i=0;i<60;i++){const l=185+r()*70|0;g.fillStyle=`rgba(${l},${l},${l-8},.4)`;g.beginPath();g.arc(r()*w,r()*h,8+r()*26,0,7);g.fill()}
@@ -742,13 +753,24 @@ function groundTexture(kind,seed){
       const x=r()*w,y=r()*h;g.fillRect(x,y,1,2+r()*4)}});
   t.wrapS=t.wrapT=THREE.RepeatWrapping;return t}
 function bannerTex(text,sub){
-  return canvasTex(512,128,(g,w,h)=>{g.fillStyle='#FFC400';g.fillRect(0,0,w,h);g.fillStyle='#14182B';g.fillRect(0,0,w,14);g.fillRect(0,h-14,w,14);
+  return fontTex(canvasTex(512,128,(g,w,h)=>{g.fillStyle='#FFC400';g.fillRect(0,0,w,h);g.fillStyle='#14182B';g.fillRect(0,0,w,14);g.fillRect(0,h-14,w,14);
     g.font='italic 900 74px "Barlow Condensed", Arial Narrow, sans-serif';g.textAlign='center';g.textBaseline='middle';g.fillText(text,w/2,h/2+4);
-    g.font='italic 800 30px "Barlow Condensed", Arial Narrow, sans-serif';g.textAlign='left';g.fillText(sub,22,h/2+4);g.textAlign='right';g.fillText(sub,w-22,h/2+4)});
+    g.font='italic 800 30px "Barlow Condensed", Arial Narrow, sans-serif';g.textAlign='left';g.fillText(sub,22,h/2+4);g.textAlign='right';g.fillText(sub,w-22,h/2+4)}));
 }
 
 // homlokzat: egy szint egy csempe (u: 3 m, v: egy szint); a (0.04,0.97) pont sima falfelület
-function facadeTexture(){
+// léckerítés-tábla (átlátszó hézagokkal) és fűcsomó (két keresztbe állított sík, fűszál-textúrával)
+function fenceTexture(){return cachedTex('fence',()=>canvasTex(256,96,(g,w,h)=>{g.clearRect(0,0,w,h);g.fillStyle='#fff';
+  for(let i=0;i<11;i++){const x=6+i*23.5;g.beginPath();g.moveTo(x,h);g.lineTo(x,16);g.lineTo(x+7,6);g.lineTo(x+14,16);g.lineTo(x+14,h);g.fill()}
+  g.fillRect(0,30,w,8);g.fillRect(0,68,w,8);g.fillStyle='rgba(0,0,0,.12)';for(let i=0;i<11;i++)g.fillRect(6+i*23.5+11,16,3,h-16)}))}
+function tuftTexture(){return cachedTex('tuft',()=>canvasTex(128,128,(g,w,h)=>{g.clearRect(0,0,w,h);const r=mulberry32(5);
+  for(let i=0;i<46;i++){const x=10+r()*108,hh=40+r()*84,lean=(r()-.5)*36,l=200+r()*55|0;g.strokeStyle=`rgb(${l},${l},${l*.9|0})`;g.lineWidth=2+r()*3;g.beginPath();g.moveTo(x,h);g.quadraticCurveTo(x+lean*.3,h-hh*.6,x+lean,h-hh);g.stroke()}}))}
+let tuftGeo=null;function tuftGeometry(){if(tuftGeo)return tuftGeo;const a=new THREE.PlaneGeometry(1,1),b=new THREE.PlaneGeometry(1,1);b.rotateY(Math.PI/2);
+  const g=new THREE.BufferGeometry(),ia=a.toNonIndexed(),ib=b.toNonIndexed();for(const k of['position','normal','uv']){const A=ia.attributes[k],B=ib.attributes[k],arr=new Float32Array(A.array.length+B.array.length);arr.set(A.array);arr.set(B.array,A.array.length);g.setAttribute(k,new THREE.BufferAttribute(arr,A.itemSize))}
+  // a normálok felfelé mutatnak, így a fűcsomó a talajjal együtt világosodik/sötétedik
+  const nrm=g.attributes.normal;for(let i=0;i<nrm.count;i++)nrm.setXYZ(i,0,1,0);return tuftGeo=g}
+function facadeTexture(){return cachedTex('facade',makeFacadeTexture)}
+function makeFacadeTexture(){
   const t=canvasTex(128,128,(g,w,h)=>{g.fillStyle='#fff';g.fillRect(0,0,w,h);
     g.fillStyle='rgba(0,0,0,.07)';g.fillRect(0,h-10,w,10);g.fillStyle='rgba(0,0,0,.05)';g.fillRect(0,0,w,4);
     const x0=40,x1=88,y0=24,y1=82;g.fillStyle='#E9E4D8';g.fillRect(x0-5,y0-5,x1-x0+10,y1-y0+14);
@@ -757,7 +779,8 @@ function facadeTexture(){
     g.fillStyle='#2E3A46';g.fillRect(x0,y0,x1-x0,y1-y0);g.fillStyle='rgba(170,200,225,.35)';g.fillRect(x0+3,y0+3,(x1-x0)/2-5,y1-y0-6);
     g.fillStyle='#F1EEE6';g.fillRect((x0+x1)/2-2,y0,4,y1-y0);g.fillRect(x0,(y0+y1)/2-2,x1-x0,4);g.fillStyle='#CFC8B8';g.fillRect(x0-7,y1,x1-x0+14,6)});
   t.wrapS=t.wrapT=THREE.RepeatWrapping;return t}
-function roofTexture(){
+function roofTexture(){return cachedTex('roof',makeRoofTexture)}
+function makeRoofTexture(){
   const t=canvasTex(64,64,(g,w,h)=>{g.fillStyle='#fff';g.fillRect(0,0,w,h);
     for(let y=0;y<h;y+=16){g.fillStyle='rgba(0,0,0,.22)';g.fillRect(0,y+13,w,3);g.fillStyle='rgba(255,255,255,.25)';g.fillRect(0,y,w,2);
       const o=(y/16)%2?8:0;g.fillStyle='rgba(0,0,0,.08)';for(let x=o;x<w;x+=16)g.fillRect(x,y,2,13)}});
@@ -837,7 +860,7 @@ function rainDrop(i,cx,cy,cz,top){rainXYZ[i*3]=cx+(Math.random()-.5)*60;rainXYZ[
 function updateRain(dt){if(!rain.visible)return;const c=camera.position;
   for(let i=0;i<RAIN_N;i++){if(!rainInit)rainDrop(i,c.x,c.y,c.z,false);let y=rainXYZ[i*3+1]-24*dt;rainXYZ[i*3+1]=y;rainXYZ[i*3]+=1.5*dt;
     if(y<c.y-10||Math.abs(rainXYZ[i*3]-c.x)>32||Math.abs(rainXYZ[i*3+2]-c.z)>32)rainDrop(i,c.x,c.y,c.z,y<c.y-10);
-    const x=rainXYZ[i*3],z=rainXYZ[i*3+2];y=rainXYZ[i*3+1];rainPos.set([x,y,z,x-.05,y+.75,z],i*6)}
+    const j=i*6;rainPos[j]=rainXYZ[i*3];rainPos[j+1]=rainXYZ[i*3+1];rainPos[j+2]=rainPos[j+5]=rainXYZ[i*3+2];rainPos[j+3]=rainPos[j]-.05;rainPos[j+4]=rainPos[j+1]+.75}
   rainInit=true;rainGeo.attributes.position.needsUpdate=true}
 // alkonyi fényszóró: a kocsi előtt a talajra illesztett, additív fényfolt (a Lambert-anyag csúcspontonként világít, ezért nem SpotLight)
 const HL_N=8,hlGeo=new THREE.PlaneGeometry(1,1,HL_N,HL_N);
@@ -854,7 +877,7 @@ function addCarLamps(m){const L=m.userData.lamps,add=(c,p,w,h)=>{const b=new THR
   L.front.forEach(p=>add(0xFFF6DA,p,.4,.12));L.rear.forEach(p=>add(0xFF3322,p,.28,.18))}
 function disposeWorld(){
   if(!world)return;
-  world.group.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material){const ms=Array.isArray(o.material)?o.material:[o.material];ms.forEach(m=>{if(m.map)m.map.dispose();if(m.userData.map2)m.userData.map2.dispose();m.dispose()})}});
+  world.group.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material){const ms=Array.isArray(o.material)?o.material:[o.material];ms.forEach(m=>{if(m.map&&!(m.map.userData||{}).keep)m.map.dispose();if(m.userData.map2&&!(m.userData.map2.userData||{}).keep)m.userData.map2.dispose();m.dispose()})}});
   scene.remove(world.group); world=null;
 }
 
@@ -954,10 +977,71 @@ function buildWorld(st){
     if(st.snowcap){dummy.position.set(x,y+hgt*0.2+hgt*0.62,z);dummy.scale.set(rad*.62,hgt*0.36,rad*.62);put('cap',x,z,hgt,null)}}));
   balls.forEach((t,n)=>{const [x,y,z,hgt,rad]=t;dummy.rotation.set(0,n,0);dummy.position.set(x,y+hgt-rad*.9,z);dummy.scale.set(rad,rad*.95,rad);put('ball',x,z,hgt,n%2?0x4E7A34:0x5C8A3A);
     dummy.position.set(x,y+(hgt-rad)/2,z);dummy.scale.set(1,Math.max(.5,hgt-rad),1);put('trunk',x,z,hgt,null)});
+  // ---- környezeti részletek: kerítések a házak előtt, villanyoszlopok lámpával és vezetékkel, bokrok, fűcsomók, kövek ----
+  Object.assign(kinds,{fence:[],pole:[],arm:[],lamp:[],bush:[],tuft:[],rock:[]});
+  const wires=[];
+  {const rr=mulberry32(st.seed*13+7),qq={},SC=12,SP=new Map(),spKey=(x,z)=>Math.floor(x/SC)+','+Math.floor(z/SC);
+    const streets=st.env?st.env.streets:[];
+    for(const t of streets){const fl=t[2];for(let k=0;k+3<fl.length;k+=2){const ax=fl[k],az=fl[k+1],bx=fl[k+2],bz=fl[k+3],n=Math.max(1,Math.ceil(Math.hypot(bx-ax,bz-az)/3));
+      for(let j=0;j<=n;j++){const x=ax+(bx-ax)*j/n,z=az+(bz-az)*j/n,key=spKey(x,z);let a=SP.get(key);if(!a)SP.set(key,a=[]);a.push(x,z,t[0]/10)}}}
+    const nearStreet=(x,z,pad)=>{const cx=Math.floor(x/SC),cz=Math.floor(z/SC);for(let a=-1;a<=1;a++)for(let b=-1;b<=1;b++){const arr=SP.get((cx+a)+','+(cz+b));
+      if(arr)for(let k=0;k<arr.length;k+=3)if(Math.hypot(arr[k]-x,arr[k+1]-z)<arr[k+2]+pad)return true}return false};
+    const offStage=(x,z,pad)=>{nearest(x,z,qq);return !(qq.d<qq.hw+pad)};
+    const wet=(x,z)=>T.landAt&&T.landAt(x,z)===6;
+    const yard=(x,z,ox,oz)=>{for(const f of [5,10,16,23])if(insideBld(x+ox*f,z+oz*f,1.5))return true;return false};
+    const FENCE=[0xF2F0E8,0xE6E1D3,0x6E8F5A,0x8A6A4A,0xB89A72,0x5B7DA0,0x9A3B30];
+    // kerítés egy vonal mentén: a ház felőli oldalon, az utcától setback távolságra; futamonként egy szín, kapunál/utcánál szünet
+    const fenceAlong=(pts,setback,isStage)=>{for(const side of[-1,1]){let col=FENCE[(rr()*FENCE.length)|0],run=false;
+      for(let k=0;k+1<pts.length;k++){const [ax,az]=pts[k],[bx,bz]=pts[k+1],L=Math.hypot(bx-ax,bz-az)||1,fx=(bx-ax)/L,fz=(bz-az)/L,ox=-fz*side,oz=fx*side;
+        const sb=pts[k][2]!=null?pts[k][2]+3.2:setback,mx=(ax+bx)/2+ox*sb,mz=(az+bz)/2+oz*sb;  // a versenyútnál a hátralépés az út szélességéhez igazodik
+        const ok=yard(mx,mz,ox,oz)&&!insideBld(mx,mz,.7)&&!nearStreet(mx,mz,isStage?2.5:1.2)&&offStage(mx,mz,2.2)&&!wet(mx,mz)&&rr()>.04;
+        if(!ok){if(run&&rr()<.6)col=FENCE[(rr()*FENCE.length)|0];run=false;continue}
+        run=true;dummy.position.set(mx,heightAt(mx,mz)+.45,mz);dummy.rotation.set(0,Math.atan2(-fz,fx),0);dummy.scale.set(L/2.4,1,1);put('fence',mx,mz,1.5,col)}}};
+    const line=(xs,zs,step)=>{const out=[];let acc=0;out.push([xs[0],zs[0]]);for(let k=1;k<xs.length;k++){acc+=Math.hypot(xs[k]-xs[k-1],zs[k]-zs[k-1]);if(acc>=step){out.push([xs[k],zs[k]]);acc=0}}return out};
+    if(T.BL.length){
+      // a versenyút mentén
+      {const st2=[[X[0],Z[0],W[0]]];let acc=0;for(let i=1;i<N;i++){acc+=STEP;if(acc>=2.4){st2.push([X[i],Z[i],W[i]]);acc=0}}fenceAlong(st2,0,true)}
+      // a falusi utcák mentén
+      for(const t of streets){const fl=t[2],xs=[],zs=[];for(let k=0;k+1<fl.length;k+=2){xs.push(fl[k]);zs.push(fl[k+1])}
+        const dense=[[xs[0],zs[0]]];for(let k=1;k<xs.length;k++){const n=Math.max(1,Math.ceil(Math.hypot(xs[k]-xs[k-1],zs[k]-zs[k-1])/1.2));for(let j=1;j<=n;j++)dense.push([xs[k-1]+(xs[k]-xs[k-1])*j/n,zs[k-1]+(zs[k]-zs[k-1])*j/n])}
+        fenceAlong(line(dense.map(p=>p[0]),dense.map(p=>p[1]),2.4),t[0]/10+2.6,false)}
+      // villanyoszlopok lámpával a versenyút falusi szakaszain, köztük vezeték
+      let prevTop=null;
+      for(let sPos=10;sPos<(N-1)*STEP-10;sPos+=34){const i=Math.floor(sPos/STEP),h=H[i],fx=Math.sin(h),fz=Math.cos(h),ox=-Math.cos(h),oz=Math.sin(h),d=W[i]+1.9;
+        const x=X[i]+ox*d,z=Z[i]+oz*d,village=yard(x,z,ox,oz)||yard(X[i]-ox*d,Z[i]-oz*d,-ox,-oz);
+        if(!village||insideBld(x,z,.5)||nearStreet(x,z,1.5)||!offStage(x,z,1.2)||wet(x,z)){prevTop=null;continue}
+        const y=heightAt(x,z),top=y+8;
+        dummy.rotation.set(0,0,0);dummy.position.set(x,y+4,z);dummy.scale.set(1,8,1);put('pole',x,z,9,null);
+        dummy.rotation.set(0,Math.atan2(oz,-ox),0);dummy.position.set(x-ox*.7,top-.55,z-oz*.7);dummy.scale.set(1.5,1,1);put('arm',x,z,9,null);
+        dummy.position.set(x-ox*1.45,top-.68,z-oz*1.45);dummy.scale.set(1,1,1);put('lamp',x,z,9,null);
+        if(prevTop&&Math.hypot(prevTop[0]-x,prevTop[2]-z)<45)for(const w of[-.3,.3]){const a=[prevTop[0]+fx*0+ox*w,prevTop[1]-.15,prevTop[2]+oz*w],b=[x+ox*w,top-.15,z+oz*w];
+          for(let j=0;j<6;j++){const t0=j/6,t1=(j+1)/6,sag=t=>Math.sin(t*Math.PI)*.6;
+            wires.push(a[0]+(b[0]-a[0])*t0,a[1]+(b[1]-a[1])*t0-sag(t0),a[2]+(b[2]-a[2])*t0,a[0]+(b[0]-a[0])*t1,a[1]+(b[1]-a[1])*t1-sag(t1),a[2]+(b[2]-a[2])*t1)}}
+        prevTop=[x,top,z]}
+      // bokrok a kertekben
+      for(const bd of T.BL){if(bd[6])continue;const n=1+((rr()*3)|0),R0=Math.max(bd[2],bd[3]);
+        for(let k=0;k<n;k++){const a=rr()*Math.PI*2,dd=R0+1.6+rr()*3.5,x=bd[0]+Math.cos(a)*dd,z=bd[1]+Math.sin(a)*dd,rad=.6+rr()*.9;
+          if(insideBld(x,z,rad*.8)||!offStage(x,z,2.5)||nearStreet(x,z,rad+.4)||wet(x,z))continue;
+          dummy.rotation.set(0,rr()*6,0);dummy.position.set(x,heightAt(x,z)+rad*.5,z);dummy.scale.set(rad*1.1,rad*.7,rad);put('bush',x,z,rad,[0x456B2E,0x507634,0x5A7A38,0x3E6230][(rr()*4)|0])}}
+    }
+    // fűcsomók az út két szélén, kövek a földutak mentén
+    for(let sPos=4;sPos<(N-1)*STEP-4;sPos+=1.15){const i=Math.floor(sPos/STEP),h=H[i],ox=-Math.cos(h),oz=Math.sin(h),side=rr()<.5?-1:1,d=W[i]+.45+rr()*rr()*5.5;
+      const x=X[i]+(Math.sin(h)*(sPos-i*STEP))+ox*side*d,z=Z[i]+(Math.cos(h)*(sPos-i*STEP))+oz*side*d;
+      if(!offStage(x,z,.3)||insideBld(x,z,.3)||nearStreet(x,z,.3)||wet(x,z))continue;const sz=.35+rr()*.45;
+      dummy.rotation.set(0,rr()*6,0);dummy.position.set(x,heightAt(x,z)+sz*.45,z);dummy.scale.set(sz,sz,sz);put('tuft',x,z,1,[0x8DB850,0x9CC05A,0xA6B85C,0xB4AE66,0x84AE4A][(rr()*5)|0]);
+      if(SF[i]===1&&rr()<.22){const d2=W[i]+.15+rr()*1.4,x2=X[i]+ox*-side*d2,z2=Z[i]+oz*-side*d2,rs=.12+rr()*.22;
+        if(offStage(x2,z2,.05)){dummy.rotation.set(rr()*3,rr()*6,rr()*3);dummy.position.set(x2,heightAt(x2,z2)+rs*.3,z2);dummy.scale.set(rs*1.3,rs,rs);put('rock',x2,z2,1,[0x8F8A82,0x9E968A,0x7D776F][(rr()*3)|0])}}}
+  }
   {let x0=Infinity,x1=-Infinity,z0=Infinity,z1=-Infinity;for(const k in kinds)for(const it of kinds[k]){x0=Math.min(x0,it.x);x1=Math.max(x1,it.x);z0=Math.min(z0,it.z);z1=Math.max(z1,it.z)}
     const cell=Math.max(140,Math.sqrt((x1-x0)*(z1-z0)/36)||0);
     const spec={cone:[coneGeo,new THREE.MeshLambertMaterial({color:0xffffff})],ball:[new THREE.IcosahedronGeometry(1,1),new THREE.MeshLambertMaterial({color:0xffffff})],
-      trunk:[trunkGeo,trunkMat],cap:[coneGeo,new THREE.MeshLambertMaterial({color:0xF4F7FA})]};
+      trunk:[trunkGeo,trunkMat],cap:[coneGeo,new THREE.MeshLambertMaterial({color:0xF4F7FA})],
+      fence:[new THREE.PlaneGeometry(2.4,.9),new THREE.MeshLambertMaterial({map:fenceTexture(),alphaTest:.5,side:THREE.DoubleSide})],
+      pole:[new THREE.CylinderGeometry(.09,.14,1,7),new THREE.MeshLambertMaterial({color:0xA9A69E})],arm:[new THREE.BoxGeometry(1,.08,.08),new THREE.MeshLambertMaterial({color:0x8E8B84})],
+      lamp:[new THREE.BoxGeometry(.5,.12,.24),new THREE.MeshBasicMaterial({color:0xFFF1C8})],
+      bush:[new THREE.DodecahedronGeometry(1,0),new THREE.MeshLambertMaterial({color:0xffffff})],
+      tuft:[tuftGeometry(),new THREE.MeshLambertMaterial({map:tuftTexture(),alphaTest:.45,side:THREE.DoubleSide})],
+      rock:[new THREE.DodecahedronGeometry(1,0),new THREE.MeshLambertMaterial({color:0xffffff})]};
     for(const k in kinds){const list=kinds[k];if(!list.length)continue;const [geo,mat]=spec[k],cells=new Map();
       for(const it of list){const key=Math.floor(it.x/cell)+','+Math.floor(it.z/cell);let c=cells.get(key);if(!c)cells.set(key,c=[]);c.push(it)}
       for(const arr of cells.values()){let cx=0,cz=0;for(const it of arr){cx+=it.x;cz+=it.z}cx/=arr.length;cz/=arr.length;let rr=0,cy=0;
@@ -967,21 +1051,28 @@ function buildWorld(st){
         const im=new THREE.InstancedMesh(g,mat,arr.length);im.frustumCulled=true;
         arr.forEach((it,n)=>{im.setMatrixAt(n,it.m);if(it.c!==null)im.setColorAt(n,tc2.setHex(it.c).multiplyScalar(.92+((n*37)%17)/100))});
         group.add(im)}}}
+  if(wires.length){const wg=new THREE.BufferGeometry();wg.setAttribute('position',new THREE.Float32BufferAttribute(wires,3));group.add(new THREE.LineSegments(wg,new THREE.LineBasicMaterial({color:0x2B2B2E})))}
   if(st.env){
     const E=st.env;
     // draped ribbon helper
-    const ribbon=(fl,w,lift,stepL)=>{const pos=[],uv=[],idx=[];const pts=[];
+    const rq={},onStage=(x,z)=>{nearest(x,z,rq);return rq.d<rq.hw+.3};
+    const ribbon=(fl,w,lift,stepL,sink)=>{const pos=[],uv=[],idx=[];const pts=[];
       for(let k=0;k+3<fl.length;k+=2){const ax=fl[k],az=fl[k+1],bx=fl[k+2],bz=fl[k+3],d=Math.hypot(bx-ax,bz-az),n=Math.max(1,Math.ceil(d/stepL));for(let t=0;t<n;t++)pts.push([ax+(bx-ax)*t/n,az+(bz-az)*t/n])}
       pts.push([fl[fl.length-2],fl[fl.length-1]]);let v=0;
       for(let k=0;k<pts.length;k++){const a=pts[Math.max(0,k-1)],b=pts[Math.min(pts.length-1,k+1)];let dx=b[0]-a[0],dz=b[1]-a[1];const l=Math.hypot(dx,dz)||1;dx/=l;dz/=l;
         const lx=pts[k][0]-dz*w,lz=pts[k][1]+dx*w,rx2=pts[k][0]+dz*w,rz2=pts[k][1]-dx*w;
-        pos.push(lx,heightAt(lx,lz)+lift,lz,rx2,heightAt(rx2,rz2)+lift,rz2);uv.push(0,v/12,1,v/12);if(k<pts.length-1){v+=Math.hypot(pts[k+1][0]-pts[k][0],pts[k+1][1]-pts[k][1]);const a2=k*2;idx.push(a2,a2+2,a2+1,a2+1,a2+2,a2+3)}}
+        pos.push(lx,heightAt(lx,lz)+(sink&&onStage(lx,lz)?-.06:lift),lz,rx2,heightAt(rx2,rz2)+(sink&&onStage(rx2,rz2)?-.06:lift),rz2);uv.push(0,v/12,1,v/12);if(k<pts.length-1){v+=Math.hypot(pts[k+1][0]-pts[k][0],pts[k+1][1]-pts[k][1]);const a2=k*2;idx.push(a2,a2+2,a2+1,a2+1,a2+2,a2+3)}}
       return {pos,uv,idx}};
     const merge=(list,mat)=>{if(!list.length)return;const P=[],U=[],I=[];let o=0;for(const r2 of list){P.push(...r2.pos);U.push(...r2.uv);for(const i2 of r2.idx)I.push(i2+o);o+=r2.pos.length/3}
       const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(P,3));geo.setAttribute('uv',new THREE.Float32BufferAttribute(U,2));geo.setIndex(I);geo.computeVertexNormals();group.add(new THREE.Mesh(geo,mat))};
     const po={side:THREE.DoubleSide,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-1};
-    merge(E.streets.filter(t=>t[1]).map(t=>ribbon(t[2],t[0]/10,.1,3)),roadMat(Object.assign({map:roadTexture('tarmac')},po)));
-    merge(E.streets.filter(t=>!t[1]).map(t=>ribbon(t[2],t[0]/10,.1,3)),roadMat(Object.assign({map:roadTexture('gravel')},po)));
+    // a térképi utcák a versenyútnál véget érnek, a szélük pedig a versenyút alá simul (korábban ráfeküdtek, és a két textúra egymásba folyt)
+    const clipStreet=fl=>{const out=[];let cur=[];const q2={},push=(x,z)=>{nearest(x,z,q2);if(q2.d<q2.hw-.6){if(cur.length>=4)out.push(cur);cur=[]}else cur.push(x,z)};
+      for(let k=0;k+3<fl.length;k+=2){const ax=fl[k],az=fl[k+1],bx=fl[k+2],bz=fl[k+3],n=Math.max(1,Math.ceil(Math.hypot(bx-ax,bz-az)/1.5));for(let t=0;t<n;t++)push(ax+(bx-ax)*t/n,az+(bz-az)*t/n)}
+      if(fl.length>=2)push(fl[fl.length-2],fl[fl.length-1]);if(cur.length>=4)out.push(cur);return out};
+    const streetRibbons=paved=>E.streets.filter(t=>!!t[1]===paved).flatMap(t=>clipStreet(t[2]).map(fl=>ribbon(fl,t[0]/10,.1,3,true)));
+    merge(streetRibbons(true),roadMat(Object.assign({map:roadTexture('street')},po)));
+    merge(streetRibbons(false),roadMat(Object.assign({map:roadTexture('gravel')},po)));
     merge(E.water.map(t=>ribbon(t[1],t[0]/2,.14,3)),new THREE.MeshLambertMaterial(Object.assign({color:0x3F82B2},po)));
     merge(E.rail.map(fl=>ribbon(fl,1.7,.14,3)),new THREE.MeshLambertMaterial(Object.assign({color:0x8B7D6B},po)));
     const railLines=[];for(const fl of E.rail){for(const off of[-.72,.72]){const o2=[];for(let k=0;k+1<fl.length;k+=2){const a=Math.max(0,k-2),b=Math.min(fl.length-2,k+2);let dx=fl[b]-fl[a],dz=fl[b+1]-fl[a+1];const l=Math.hypot(dx,dz)||1;o2.push(fl[k]-dz/l*off,fl[k+1]+dx/l*off)}railLines.push(ribbon(o2,.07,.3,3))}}
@@ -994,8 +1085,8 @@ function buildWorld(st){
     // town sign at the start
     {const i=Math.min(N-1,10),rx=-Math.cos(H[i]),rz=Math.sin(H[i]),x=X[i]+rx*(W[i]+2.2),z=Z[i]+rz*(W[i]+2.2),y=heightAt(x,z);
       const post=new THREE.Mesh(new THREE.CylinderGeometry(.06,.06,2.6,6),new THREE.MeshLambertMaterial({color:0x8A8F96}));post.position.set(x,y+1.3,z);group.add(post);
-      const tex=canvasTex(512,170,(g,w,h)=>{g.fillStyle='#fff';g.fillRect(0,0,w,h);g.strokeStyle='#14182B';g.lineWidth=10;g.strokeRect(10,10,w-20,h-20);g.fillStyle='#14182B';
-        g.font='700 92px "Barlow", Arial, sans-serif';g.textAlign='center';g.textBaseline='middle';g.fillText(st.name.toUpperCase(),w/2,h/2+4)});
+      const tex=fontTex(canvasTex(512,170,(g,w,h)=>{g.fillStyle='#fff';g.fillRect(0,0,w,h);g.strokeStyle='#14182B';g.lineWidth=10;g.strokeRect(10,10,w-20,h-20);g.fillStyle='#14182B';
+        g.font='700 92px "Barlow", Arial, sans-serif';g.textAlign='center';g.textBaseline='middle';g.fillText(st.name.toUpperCase(),w/2,h/2+4)}));
       const pl=new THREE.Mesh(new THREE.BoxGeometry(2.4,.8,.06),[0,0,0,0,1,1].map(k=>k?new THREE.MeshBasicMaterial({map:tex}):new THREE.MeshLambertMaterial({color:0xffffff})));
       pl.position.set(x,y+2.7,z);pl.rotation.y=H[i]+Math.PI;group.add(pl)}
   }
@@ -1069,8 +1160,8 @@ function drawMinimap(){
 }
 
 /* ================= cars ================= */
-function numTex(n){return canvasTex(128,128,(g,w,h)=>{g.fillStyle='#fff';g.beginPath();g.arc(64,64,58,0,Math.PI*2);g.fill();g.lineWidth=6;g.strokeStyle='#14182B';g.stroke();
-  g.fillStyle='#14182B';g.font='italic 900 78px "Barlow Condensed", Arial Narrow, sans-serif';g.textAlign='center';g.textBaseline='middle';g.fillText(String(n),61,70)})}
+function numTex(n){return fontTex(canvasTex(128,128,(g,w,h)=>{g.fillStyle='#fff';g.beginPath();g.arc(64,64,58,0,Math.PI*2);g.fill();g.lineWidth=6;g.strokeStyle='#14182B';g.stroke();
+  g.fillStyle='#14182B';g.font='italic 900 78px "Barlow Condensed", Arial Narrow, sans-serif';g.textAlign='center';g.textBaseline='middle';g.fillText(String(n),61,70)}))}
 function disposeObj(o){if(!o)return;scene.remove(o);o.traverse(m=>{if(m.geometry)m.geometry.dispose();if(m.material){(Array.isArray(m.material)?m.material:[m.material]).forEach(x=>{if(x.map)x.map.dispose();x.dispose()})}})}
 // autótípusok: oldalprofilok (hossz z mentén, előre +z; null = kerékív) és a részletek helye
 const CAR_MODELS={
@@ -1122,6 +1213,25 @@ function carGeos(M){const key=CAR_KEYS.find(k=>CAR_MODELS[k]===M)||'hatch';if(ca
   const lip=new THREE.TorusGeometry(wr*.6,.022,6,22);lip.rotateY(Math.PI/2);
   return carGeoCache[key]={lip,spoke:new THREE.BoxGeometry(.03,wr*.56,.055),wheelT,rimG,discG,flare,fog,roundL,pipe,
     body:carExtrude(M.body,M.bodyW,.05,[[-M.wz,wr,ar],[M.wz,wr,ar]]),cabin:carExtrude(M.cabin,M.cabW,.07),roof:carExtrude(M.roof,M.roofW,.03)}}
+// összevonás: a mesh-ek anyagtípusonként egy geometriába kerülnek, a színük csúcsszínként marad meg
+// (egy autó ~99 helyett ~20 rajzolási hívás); a gyorsítótárazott geometriákat nem bántja
+function mergeMeshes(list,inv){const B=new Map(),m4=new THREE.Matrix4();
+  for(const o of list){const mt=o.material;
+    const key=[mt.type,mt.transparent,mt.side,mt.map?mt.map.uuid:'',mt.emissive?mt.emissive.getHex():'',mt.userData.solo?mt.uuid:''].join('|');
+    let b=B.get(key);if(!b)B.set(key,b={mat:mt,parts:[]});
+    m4.multiplyMatrices(inv,o.matrixWorld);const g=o.geometry.index?o.geometry.toNonIndexed():o.geometry.clone();g.applyMatrix4(m4);
+    const n=g.attributes.position.count,col=new Float32Array(n*3),c=mt.color;for(let i=0;i<n;i++){col[i*3]=c.r;col[i*3+1]=c.g;col[i*3+2]=c.b}
+    g.setAttribute('color',new THREE.BufferAttribute(col,3));b.parts.push(g)}
+  const out=[];
+  for(const b of B.values()){const names=['position','normal','color'].concat(b.parts.every(g=>g.attributes.uv)?['uv']:[]),geo=new THREE.BufferGeometry();
+    for(const a of names){const size=b.parts[0].attributes[a].itemSize,arr=new Float32Array(b.parts.reduce((s,g)=>s+g.attributes[a].count*size,0));let o=0;
+      for(const g of b.parts){arr.set(g.attributes[a].array,o);o+=g.attributes[a].count*size}geo.setAttribute(a,new THREE.BufferAttribute(arr,size))}
+    b.parts.forEach(g=>g.dispose());const mat=b.mat.clone();mat.vertexColors=true;mat.color.set(0xffffff);out.push(new THREE.Mesh(geo,mat))}
+  return out}
+function mergeInto(target,meshes){target.updateMatrixWorld(true);const inv=new THREE.Matrix4().copy(target.matrixWorld).invert();const merged=mergeMeshes(meshes,inv);
+  const cached=new Set(Object.values(carGeoCache).flatMap(o=>Object.values(o)));
+  for(const m of meshes){if(m.parent)m.parent.remove(m);if(!cached.has(m.geometry))m.geometry.dispose();m.material.dispose()}
+  merged.forEach(m=>target.add(m))}
 function makeCar(look,ghost){
   look=Object.assign({},DEFAULT_LOOK,look||{});const M=carModel(look),G=carGeos(M);
   const g=new THREE.Group(), body=new THREE.Group(); g.add(body);
@@ -1129,7 +1239,8 @@ function makeCar(look,ghost){
   const mk=(c,o)=>new THREE.MeshLambertMaterial(Object.assign({color:c},gh,o||{}));
   const mkP=(c,sh,spec,o)=>new THREE.MeshPhongMaterial(Object.assign({color:c,shininess:sh,specular:spec},gh,o||{}));
   const paint=mkP(look.color,70,0x3a3a3a), c2=mkP(look.color2,70,0x3a3a3a), dark=mk(0x1C1F28), plastic=mkP(0x24272F,20,0x161616), glass=mkP(0x1E2836,110,0x8899aa),
-    tire=mk(0x141518), rim=mkP(look.rim,60,0x555555), rimIn=mk(0x34373E), metal=mkP(0x8C9096,80,0x666666), chrome=mkP(0xD6DADF,140,0xffffff), red=mk(0xC81E1E),
+    tire=mk(0x141518), rim=mkP(look.rim,60,0x555555), rimIn=mk(0x34373E), metal=mkP(0x8C9096,80,0x666666), chrome=mkP(0xD6DADF,140,0xffffff), red=mk(0xC81E1E);
+  glass.userData.solo=true;const
     lamp=mkP(0xF3F1E6,120,0xffffff,ghost?{}:{emissive:0x5a5440}), tail=mkP(0xB3121A,90,0x884444,ghost?{}:{emissive:0x3a0505}), white=mk(0xF4F4F0);
   const add=(geo,mat,x,y,z,p)=>{const m=new THREE.Mesh(geo,mat);m.position.set(x,y,z);(p||body).add(m);return m};
   const box=(w,h,d,mat,x,y,z,p)=>add(new THREE.BoxGeometry(w,h,d),mat,x,y,z,p);
@@ -1185,6 +1296,11 @@ function makeCar(look,ghost){
   if(!ghost){const sh=new THREE.Mesh(new THREE.PlaneGeometry(M.bodyW+.9,F-R+.75),new THREE.MeshBasicMaterial({map:canvasTex(64,128,(c,w,h)=>{const gr=c.createRadialGradient(w/2,h/2,4,w/2,h/2,w/2);gr.addColorStop(0,'rgba(0,0,0,.55)');gr.addColorStop(1,'rgba(0,0,0,0)');c.save();c.scale(1,2);c.fillStyle=gr;c.fillRect(0,0,w,h);c.restore()}),transparent:true,depthWrite:false}));
     sh.rotation.x=-Math.PI/2;sh.position.set(0,.06,(F+R)/2);g.add(sh)}
   const fl=M.round?M.lamp.x:M.lamp.x;
+  // statikus karosszéria-elemek és a forgó kerékrészek összevonása
+  g.updateMatrixWorld(true);
+  {const ms=[];body.traverse(o=>{if(o.isMesh)ms.push(o)});mergeInto(body,ms)}
+  wheels.forEach(wh=>{const ms=[];wh.w.traverse(o=>{if(o.isMesh)ms.push(o)});const wg=new THREE.Group();wh.piv.add(wg);wg.updateMatrixWorld(true);
+    const keep=wh.w;mergeInto(wg,ms);wh.piv.remove(keep);wh.w=wg});
   g.userData={body,wheels,lamps:{front:[[fl,M.lamp.y,F+.04],[-fl,M.lamp.y,F+.04]],rear:[[M.tail.x,M.tail.y,R-.03],[-M.tail.x,M.tail.y,R-.03]]},model:M};
   return g;
 }
@@ -1522,11 +1638,11 @@ async function startRace(){
   tune=computeTune(st,getSetup(st));
   carMesh=makeCar(local.look,false);carMesh.userData.body.position.y=tune.ride;scene.add(carMesh);
   applyCond(curCond());if(condId==='dusk')addCarLamps(carMesh);
-  placeCar(12);maxS=12;raceTime=0;splitsHit=[];rec=[];recT=0.1;noteIdx=0;spIdx=0;deltaT=0;shake=0;
+  placeCar(12);try{renderer.compile(scene,camera)}catch(e){}maxS=12;raceTime=0;splitsHit=[];rec=[];recT=0.1;noteIdx=0;spIdx=0;deltaT=0;shake=0;
   $('#hDelta').className='';$('#pMe').style.background=local.look.color;
   state='countdown';countT=3.999;lastCount=-1;txtCache.clear();
   const run=++raceRun;await loadGhost();if(run!==raceRun)return;
-  if(ghost&&state!=='menu'){ghostMesh=makeCar(ghost.look,true);scene.add(ghostMesh);$('#pGhost').hidden=false;$('#pGhost').style.background=ghost.look.color||'#888'}else $('#pGhost').hidden=true;
+  if(ghost&&state!=='menu'){ghostMesh=makeCar(ghost.look,true);scene.add(ghostMesh);try{renderer.compile(scene,camera)}catch(e){}$('#pGhost').hidden=false;$('#pGhost').style.background=ghost.look.color||'#888'}else $('#pGhost').hidden=true;
   camH=car.h;camPos.set(car.x-Math.sin(car.h)*8,car.y+4,car.z-Math.cos(car.h)*8);
   $('#hint').hidden=false;setTimeout(()=>{$('#hint').hidden=true},9000);
 }
@@ -1963,7 +2079,8 @@ refreshStages();
 const startQ=new URLSearchParams(location.search),startSt=STAGES.findIndex(x=>x.id===startQ.get('szakasz'));if(startSt>=0)stageIx=startSt;
 buildWorld(STAGES[stageIx]);renderAll();showScreen(startQ.has('napi')?'daily':startSt>=0?'menu':'home');if(!curP()||!curP().nick)openWho(true);
 const fontsReady=document.fonts&&document.fonts.ready?document.fonts.ready:Promise.resolve();
-fontsReady.then(()=>{if(state==='menu'){buildWorld(STAGES[stageIx])}});
+// a betűtípusok betöltése után csak a feliratos textúrák rajzolódnak újra (korábban az egész pálya újraépült)
+fontsReady.then(()=>{scene.traverse(o=>{const ms=o.material?(Array.isArray(o.material)?o.material:[o.material]):[];for(const m of ms)if(m.map&&m.map.userData&&m.map.userData.font)m.map.userData.redraw()})});
 initOnline();
 requestAnimationFrame(frame);
 })();
