@@ -531,7 +531,8 @@ const THEME_LABEL={gravel:'Murva, erdő',snow:'Hó, fenyves',tarmac:'Aszfalt, t�
 function hashStr(t){let h=2166136261;for(let i=0;i<t.length;i++){h^=t.charCodeAt(i);h=Math.imul(h,16777619)}return (h>>>0)%100000+1}
 function makeCustomStage(t,i){const th=THEMES[t.theme]||THEMES.gravel;
   return Object.assign({},th,{id:t.id,code:'GY'+(BUILTIN.length+i+1),name:t.name,surf:THEME_LABEL[t.theme]||THEME_LABEL.gravel,len:t.len,custom:true,pts:t.pts,owner:t.owner||null,seed:hashStr(t.id)})}
-const LAND_COL={1:0xC8B572,2:0x34552A,3:0x7E9E4C,4:0x8DB356,5:0x6E7E3A,6:0x3F82B2,7:0x9C9A90,8:0x8E8C84};
+// 8 = az utak menti sáv: füves padka, nem szürke beton (a 6 m-es rácson szögletes szürke foltként folyt ki az utak mellé)
+const LAND_COL={1:0xC8B572,2:0x34552A,3:0x7E9E4C,4:0x8DB356,5:0x6E7E3A,6:0x3F82B2,7:0x93A066,8:0x7F9B4E};
 const COLORS=['#E2231A','#1D5BD6','#FFC400','#F2F2EE','#14935A','#FF6A13'];
 
 /* ================= persistence (local) ================= */
@@ -728,10 +729,13 @@ function roadTexture(kind){return cachedTex('road:'+kind,()=>makeRoadTexture(kin
 function makeRoadTexture(kind){
   const r=mulberry32(99);
   const t=canvasTex(256,256,(g,w,h)=>{
-    const base={gravel:'#9C8462',snow:'#E4EAF0',tarmac:'#4A4D53'}[kind]; g.fillStyle=base;g.fillRect(0,0,w,h);
+    const base={gravel:'#9C8462',snow:'#E4EAF0',tarmac:'#4A4D53',street:'#575A60'}[kind]; g.fillStyle=base;g.fillRect(0,0,w,h);
     const sp=kind==='gravel'?[[70,55,38],[190,170,135],[120,100,75]]:kind==='snow'?[[200,210,222],[255,255,255],[175,190,205]]:[[60,62,66],[95,97,102],[40,42,45]];
     for(let i=0;i<9000;i++){const c=sp[(r()*3)|0];g.fillStyle=`rgba(${c[0]},${c[1]},${c[2]},${0.25+r()*0.5})`;g.fillRect(r()*w,r()*h,1+r()*2.5,1+r()*2.5)}
-    if(kind!=='tarmac'){g.fillStyle=kind==='gravel'?'rgba(70,52,34,.22)':'rgba(150,168,190,.35)';g.fillRect(w*.22,0,w*.12,h);g.fillRect(w*.66,0,w*.12,h)}
+    if(kind==='street'){// falusi utca: felfestés nélkül, foltozásokkal és kopott széllel
+      for(let i=0;i<7;i++){g.fillStyle=`rgba(${r()<.5?30:80},${r()<.5?32:82},${r()<.5?36:86},.35)`;g.fillRect(w*(.1+r()*.6),r()*h,w*(.1+r()*.25),h*(.05+r()*.12))}
+      g.fillStyle='rgba(120,110,90,.35)';g.fillRect(0,0,10,h);g.fillRect(w-10,0,10,h)}
+    if(kind!=='tarmac'&&kind!=='street'){g.fillStyle=kind==='gravel'?'rgba(70,52,34,.22)':'rgba(150,168,190,.35)';g.fillRect(w*.22,0,w*.12,h);g.fillRect(w*.66,0,w*.12,h)}
     if(kind==='gravel'){g.fillStyle='rgba(85,105,55,.4)';g.fillRect(0,0,8,h);g.fillRect(w-8,0,8,h)}
     if(kind==='tarmac'){g.fillStyle='#EDEDE6';g.fillRect(10,0,6,h);g.fillRect(w-16,0,6,h);g.fillRect(w/2-3,0,6,h*.45)}
   });
@@ -755,6 +759,16 @@ function bannerTex(text,sub){
 }
 
 // homlokzat: egy szint egy csempe (u: 3 m, v: egy szint); a (0.04,0.97) pont sima falfelület
+// léckerítés-tábla (átlátszó hézagokkal) és fűcsomó (két keresztbe állított sík, fűszál-textúrával)
+function fenceTexture(){return cachedTex('fence',()=>canvasTex(256,96,(g,w,h)=>{g.clearRect(0,0,w,h);g.fillStyle='#fff';
+  for(let i=0;i<11;i++){const x=6+i*23.5;g.beginPath();g.moveTo(x,h);g.lineTo(x,16);g.lineTo(x+7,6);g.lineTo(x+14,16);g.lineTo(x+14,h);g.fill()}
+  g.fillRect(0,30,w,8);g.fillRect(0,68,w,8);g.fillStyle='rgba(0,0,0,.12)';for(let i=0;i<11;i++)g.fillRect(6+i*23.5+11,16,3,h-16)}))}
+function tuftTexture(){return cachedTex('tuft',()=>canvasTex(128,128,(g,w,h)=>{g.clearRect(0,0,w,h);const r=mulberry32(5);
+  for(let i=0;i<46;i++){const x=10+r()*108,hh=40+r()*84,lean=(r()-.5)*36,l=200+r()*55|0;g.strokeStyle=`rgb(${l},${l},${l*.9|0})`;g.lineWidth=2+r()*3;g.beginPath();g.moveTo(x,h);g.quadraticCurveTo(x+lean*.3,h-hh*.6,x+lean,h-hh);g.stroke()}}))}
+let tuftGeo=null;function tuftGeometry(){if(tuftGeo)return tuftGeo;const a=new THREE.PlaneGeometry(1,1),b=new THREE.PlaneGeometry(1,1);b.rotateY(Math.PI/2);
+  const g=new THREE.BufferGeometry(),ia=a.toNonIndexed(),ib=b.toNonIndexed();for(const k of['position','normal','uv']){const A=ia.attributes[k],B=ib.attributes[k],arr=new Float32Array(A.array.length+B.array.length);arr.set(A.array);arr.set(B.array,A.array.length);g.setAttribute(k,new THREE.BufferAttribute(arr,A.itemSize))}
+  // a normálok felfelé mutatnak, így a fűcsomó a talajjal együtt világosodik/sötétedik
+  const nrm=g.attributes.normal;for(let i=0;i<nrm.count;i++)nrm.setXYZ(i,0,1,0);return tuftGeo=g}
 function facadeTexture(){return cachedTex('facade',makeFacadeTexture)}
 function makeFacadeTexture(){
   const t=canvasTex(128,128,(g,w,h)=>{g.fillStyle='#fff';g.fillRect(0,0,w,h);
@@ -963,10 +977,71 @@ function buildWorld(st){
     if(st.snowcap){dummy.position.set(x,y+hgt*0.2+hgt*0.62,z);dummy.scale.set(rad*.62,hgt*0.36,rad*.62);put('cap',x,z,hgt,null)}}));
   balls.forEach((t,n)=>{const [x,y,z,hgt,rad]=t;dummy.rotation.set(0,n,0);dummy.position.set(x,y+hgt-rad*.9,z);dummy.scale.set(rad,rad*.95,rad);put('ball',x,z,hgt,n%2?0x4E7A34:0x5C8A3A);
     dummy.position.set(x,y+(hgt-rad)/2,z);dummy.scale.set(1,Math.max(.5,hgt-rad),1);put('trunk',x,z,hgt,null)});
+  // ---- környezeti részletek: kerítések a házak előtt, villanyoszlopok lámpával és vezetékkel, bokrok, fűcsomók, kövek ----
+  Object.assign(kinds,{fence:[],pole:[],arm:[],lamp:[],bush:[],tuft:[],rock:[]});
+  const wires=[];
+  {const rr=mulberry32(st.seed*13+7),qq={},SC=12,SP=new Map(),spKey=(x,z)=>Math.floor(x/SC)+','+Math.floor(z/SC);
+    const streets=st.env?st.env.streets:[];
+    for(const t of streets){const fl=t[2];for(let k=0;k+3<fl.length;k+=2){const ax=fl[k],az=fl[k+1],bx=fl[k+2],bz=fl[k+3],n=Math.max(1,Math.ceil(Math.hypot(bx-ax,bz-az)/3));
+      for(let j=0;j<=n;j++){const x=ax+(bx-ax)*j/n,z=az+(bz-az)*j/n,key=spKey(x,z);let a=SP.get(key);if(!a)SP.set(key,a=[]);a.push(x,z,t[0]/10)}}}
+    const nearStreet=(x,z,pad)=>{const cx=Math.floor(x/SC),cz=Math.floor(z/SC);for(let a=-1;a<=1;a++)for(let b=-1;b<=1;b++){const arr=SP.get((cx+a)+','+(cz+b));
+      if(arr)for(let k=0;k<arr.length;k+=3)if(Math.hypot(arr[k]-x,arr[k+1]-z)<arr[k+2]+pad)return true}return false};
+    const offStage=(x,z,pad)=>{nearest(x,z,qq);return !(qq.d<qq.hw+pad)};
+    const wet=(x,z)=>T.landAt&&T.landAt(x,z)===6;
+    const yard=(x,z,ox,oz)=>{for(const f of [5,10,16,23])if(insideBld(x+ox*f,z+oz*f,1.5))return true;return false};
+    const FENCE=[0xF2F0E8,0xE6E1D3,0x6E8F5A,0x8A6A4A,0xB89A72,0x5B7DA0,0x9A3B30];
+    // kerítés egy vonal mentén: a ház felőli oldalon, az utcától setback távolságra; futamonként egy szín, kapunál/utcánál szünet
+    const fenceAlong=(pts,setback,isStage)=>{for(const side of[-1,1]){let col=FENCE[(rr()*FENCE.length)|0],run=false;
+      for(let k=0;k+1<pts.length;k++){const [ax,az]=pts[k],[bx,bz]=pts[k+1],L=Math.hypot(bx-ax,bz-az)||1,fx=(bx-ax)/L,fz=(bz-az)/L,ox=-fz*side,oz=fx*side;
+        const sb=pts[k][2]!=null?pts[k][2]+3.2:setback,mx=(ax+bx)/2+ox*sb,mz=(az+bz)/2+oz*sb;  // a versenyútnál a hátralépés az út szélességéhez igazodik
+        const ok=yard(mx,mz,ox,oz)&&!insideBld(mx,mz,.7)&&!nearStreet(mx,mz,isStage?2.5:1.2)&&offStage(mx,mz,2.2)&&!wet(mx,mz)&&rr()>.04;
+        if(!ok){if(run&&rr()<.6)col=FENCE[(rr()*FENCE.length)|0];run=false;continue}
+        run=true;dummy.position.set(mx,heightAt(mx,mz)+.45,mz);dummy.rotation.set(0,Math.atan2(-fz,fx),0);dummy.scale.set(L/2.4,1,1);put('fence',mx,mz,1.5,col)}}};
+    const line=(xs,zs,step)=>{const out=[];let acc=0;out.push([xs[0],zs[0]]);for(let k=1;k<xs.length;k++){acc+=Math.hypot(xs[k]-xs[k-1],zs[k]-zs[k-1]);if(acc>=step){out.push([xs[k],zs[k]]);acc=0}}return out};
+    if(T.BL.length){
+      // a versenyút mentén
+      {const st2=[[X[0],Z[0],W[0]]];let acc=0;for(let i=1;i<N;i++){acc+=STEP;if(acc>=2.4){st2.push([X[i],Z[i],W[i]]);acc=0}}fenceAlong(st2,0,true)}
+      // a falusi utcák mentén
+      for(const t of streets){const fl=t[2],xs=[],zs=[];for(let k=0;k+1<fl.length;k+=2){xs.push(fl[k]);zs.push(fl[k+1])}
+        const dense=[[xs[0],zs[0]]];for(let k=1;k<xs.length;k++){const n=Math.max(1,Math.ceil(Math.hypot(xs[k]-xs[k-1],zs[k]-zs[k-1])/1.2));for(let j=1;j<=n;j++)dense.push([xs[k-1]+(xs[k]-xs[k-1])*j/n,zs[k-1]+(zs[k]-zs[k-1])*j/n])}
+        fenceAlong(line(dense.map(p=>p[0]),dense.map(p=>p[1]),2.4),t[0]/10+2.6,false)}
+      // villanyoszlopok lámpával a versenyút falusi szakaszain, köztük vezeték
+      let prevTop=null;
+      for(let sPos=10;sPos<(N-1)*STEP-10;sPos+=34){const i=Math.floor(sPos/STEP),h=H[i],fx=Math.sin(h),fz=Math.cos(h),ox=-Math.cos(h),oz=Math.sin(h),d=W[i]+1.9;
+        const x=X[i]+ox*d,z=Z[i]+oz*d,village=yard(x,z,ox,oz)||yard(X[i]-ox*d,Z[i]-oz*d,-ox,-oz);
+        if(!village||insideBld(x,z,.5)||nearStreet(x,z,1.5)||!offStage(x,z,1.2)||wet(x,z)){prevTop=null;continue}
+        const y=heightAt(x,z),top=y+8;
+        dummy.rotation.set(0,0,0);dummy.position.set(x,y+4,z);dummy.scale.set(1,8,1);put('pole',x,z,9,null);
+        dummy.rotation.set(0,Math.atan2(oz,-ox),0);dummy.position.set(x-ox*.7,top-.55,z-oz*.7);dummy.scale.set(1.5,1,1);put('arm',x,z,9,null);
+        dummy.position.set(x-ox*1.45,top-.68,z-oz*1.45);dummy.scale.set(1,1,1);put('lamp',x,z,9,null);
+        if(prevTop&&Math.hypot(prevTop[0]-x,prevTop[2]-z)<45)for(const w of[-.3,.3]){const a=[prevTop[0]+fx*0+ox*w,prevTop[1]-.15,prevTop[2]+oz*w],b=[x+ox*w,top-.15,z+oz*w];
+          for(let j=0;j<6;j++){const t0=j/6,t1=(j+1)/6,sag=t=>Math.sin(t*Math.PI)*.6;
+            wires.push(a[0]+(b[0]-a[0])*t0,a[1]+(b[1]-a[1])*t0-sag(t0),a[2]+(b[2]-a[2])*t0,a[0]+(b[0]-a[0])*t1,a[1]+(b[1]-a[1])*t1-sag(t1),a[2]+(b[2]-a[2])*t1)}}
+        prevTop=[x,top,z]}
+      // bokrok a kertekben
+      for(const bd of T.BL){if(bd[6])continue;const n=1+((rr()*3)|0),R0=Math.max(bd[2],bd[3]);
+        for(let k=0;k<n;k++){const a=rr()*Math.PI*2,dd=R0+1.6+rr()*3.5,x=bd[0]+Math.cos(a)*dd,z=bd[1]+Math.sin(a)*dd,rad=.6+rr()*.9;
+          if(insideBld(x,z,rad*.8)||!offStage(x,z,2.5)||nearStreet(x,z,rad+.4)||wet(x,z))continue;
+          dummy.rotation.set(0,rr()*6,0);dummy.position.set(x,heightAt(x,z)+rad*.5,z);dummy.scale.set(rad*1.1,rad*.7,rad);put('bush',x,z,rad,[0x456B2E,0x507634,0x5A7A38,0x3E6230][(rr()*4)|0])}}
+    }
+    // fűcsomók az út két szélén, kövek a földutak mentén
+    for(let sPos=4;sPos<(N-1)*STEP-4;sPos+=1.15){const i=Math.floor(sPos/STEP),h=H[i],ox=-Math.cos(h),oz=Math.sin(h),side=rr()<.5?-1:1,d=W[i]+.45+rr()*rr()*5.5;
+      const x=X[i]+(Math.sin(h)*(sPos-i*STEP))+ox*side*d,z=Z[i]+(Math.cos(h)*(sPos-i*STEP))+oz*side*d;
+      if(!offStage(x,z,.3)||insideBld(x,z,.3)||nearStreet(x,z,.3)||wet(x,z))continue;const sz=.35+rr()*.45;
+      dummy.rotation.set(0,rr()*6,0);dummy.position.set(x,heightAt(x,z)+sz*.45,z);dummy.scale.set(sz,sz,sz);put('tuft',x,z,1,[0x8DB850,0x9CC05A,0xA6B85C,0xB4AE66,0x84AE4A][(rr()*5)|0]);
+      if(SF[i]===1&&rr()<.22){const d2=W[i]+.15+rr()*1.4,x2=X[i]+ox*-side*d2,z2=Z[i]+oz*-side*d2,rs=.12+rr()*.22;
+        if(offStage(x2,z2,.05)){dummy.rotation.set(rr()*3,rr()*6,rr()*3);dummy.position.set(x2,heightAt(x2,z2)+rs*.3,z2);dummy.scale.set(rs*1.3,rs,rs);put('rock',x2,z2,1,[0x8F8A82,0x9E968A,0x7D776F][(rr()*3)|0])}}}
+  }
   {let x0=Infinity,x1=-Infinity,z0=Infinity,z1=-Infinity;for(const k in kinds)for(const it of kinds[k]){x0=Math.min(x0,it.x);x1=Math.max(x1,it.x);z0=Math.min(z0,it.z);z1=Math.max(z1,it.z)}
     const cell=Math.max(140,Math.sqrt((x1-x0)*(z1-z0)/36)||0);
     const spec={cone:[coneGeo,new THREE.MeshLambertMaterial({color:0xffffff})],ball:[new THREE.IcosahedronGeometry(1,1),new THREE.MeshLambertMaterial({color:0xffffff})],
-      trunk:[trunkGeo,trunkMat],cap:[coneGeo,new THREE.MeshLambertMaterial({color:0xF4F7FA})]};
+      trunk:[trunkGeo,trunkMat],cap:[coneGeo,new THREE.MeshLambertMaterial({color:0xF4F7FA})],
+      fence:[new THREE.PlaneGeometry(2.4,.9),new THREE.MeshLambertMaterial({map:fenceTexture(),alphaTest:.5,side:THREE.DoubleSide})],
+      pole:[new THREE.CylinderGeometry(.09,.14,1,7),new THREE.MeshLambertMaterial({color:0xA9A69E})],arm:[new THREE.BoxGeometry(1,.08,.08),new THREE.MeshLambertMaterial({color:0x8E8B84})],
+      lamp:[new THREE.BoxGeometry(.5,.12,.24),new THREE.MeshBasicMaterial({color:0xFFF1C8})],
+      bush:[new THREE.DodecahedronGeometry(1,0),new THREE.MeshLambertMaterial({color:0xffffff})],
+      tuft:[tuftGeometry(),new THREE.MeshLambertMaterial({map:tuftTexture(),alphaTest:.45,side:THREE.DoubleSide})],
+      rock:[new THREE.DodecahedronGeometry(1,0),new THREE.MeshLambertMaterial({color:0xffffff})]};
     for(const k in kinds){const list=kinds[k];if(!list.length)continue;const [geo,mat]=spec[k],cells=new Map();
       for(const it of list){const key=Math.floor(it.x/cell)+','+Math.floor(it.z/cell);let c=cells.get(key);if(!c)cells.set(key,c=[]);c.push(it)}
       for(const arr of cells.values()){let cx=0,cz=0;for(const it of arr){cx+=it.x;cz+=it.z}cx/=arr.length;cz/=arr.length;let rr=0,cy=0;
@@ -976,21 +1051,28 @@ function buildWorld(st){
         const im=new THREE.InstancedMesh(g,mat,arr.length);im.frustumCulled=true;
         arr.forEach((it,n)=>{im.setMatrixAt(n,it.m);if(it.c!==null)im.setColorAt(n,tc2.setHex(it.c).multiplyScalar(.92+((n*37)%17)/100))});
         group.add(im)}}}
+  if(wires.length){const wg=new THREE.BufferGeometry();wg.setAttribute('position',new THREE.Float32BufferAttribute(wires,3));group.add(new THREE.LineSegments(wg,new THREE.LineBasicMaterial({color:0x2B2B2E})))}
   if(st.env){
     const E=st.env;
     // draped ribbon helper
-    const ribbon=(fl,w,lift,stepL)=>{const pos=[],uv=[],idx=[];const pts=[];
+    const rq={},onStage=(x,z)=>{nearest(x,z,rq);return rq.d<rq.hw+.3};
+    const ribbon=(fl,w,lift,stepL,sink)=>{const pos=[],uv=[],idx=[];const pts=[];
       for(let k=0;k+3<fl.length;k+=2){const ax=fl[k],az=fl[k+1],bx=fl[k+2],bz=fl[k+3],d=Math.hypot(bx-ax,bz-az),n=Math.max(1,Math.ceil(d/stepL));for(let t=0;t<n;t++)pts.push([ax+(bx-ax)*t/n,az+(bz-az)*t/n])}
       pts.push([fl[fl.length-2],fl[fl.length-1]]);let v=0;
       for(let k=0;k<pts.length;k++){const a=pts[Math.max(0,k-1)],b=pts[Math.min(pts.length-1,k+1)];let dx=b[0]-a[0],dz=b[1]-a[1];const l=Math.hypot(dx,dz)||1;dx/=l;dz/=l;
         const lx=pts[k][0]-dz*w,lz=pts[k][1]+dx*w,rx2=pts[k][0]+dz*w,rz2=pts[k][1]-dx*w;
-        pos.push(lx,heightAt(lx,lz)+lift,lz,rx2,heightAt(rx2,rz2)+lift,rz2);uv.push(0,v/12,1,v/12);if(k<pts.length-1){v+=Math.hypot(pts[k+1][0]-pts[k][0],pts[k+1][1]-pts[k][1]);const a2=k*2;idx.push(a2,a2+2,a2+1,a2+1,a2+2,a2+3)}}
+        pos.push(lx,heightAt(lx,lz)+(sink&&onStage(lx,lz)?-.06:lift),lz,rx2,heightAt(rx2,rz2)+(sink&&onStage(rx2,rz2)?-.06:lift),rz2);uv.push(0,v/12,1,v/12);if(k<pts.length-1){v+=Math.hypot(pts[k+1][0]-pts[k][0],pts[k+1][1]-pts[k][1]);const a2=k*2;idx.push(a2,a2+2,a2+1,a2+1,a2+2,a2+3)}}
       return {pos,uv,idx}};
     const merge=(list,mat)=>{if(!list.length)return;const P=[],U=[],I=[];let o=0;for(const r2 of list){P.push(...r2.pos);U.push(...r2.uv);for(const i2 of r2.idx)I.push(i2+o);o+=r2.pos.length/3}
       const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(P,3));geo.setAttribute('uv',new THREE.Float32BufferAttribute(U,2));geo.setIndex(I);geo.computeVertexNormals();group.add(new THREE.Mesh(geo,mat))};
     const po={side:THREE.DoubleSide,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-1};
-    merge(E.streets.filter(t=>t[1]).map(t=>ribbon(t[2],t[0]/10,.1,3)),roadMat(Object.assign({map:roadTexture('tarmac')},po)));
-    merge(E.streets.filter(t=>!t[1]).map(t=>ribbon(t[2],t[0]/10,.1,3)),roadMat(Object.assign({map:roadTexture('gravel')},po)));
+    // a térképi utcák a versenyútnál véget érnek, a szélük pedig a versenyút alá simul (korábban ráfeküdtek, és a két textúra egymásba folyt)
+    const clipStreet=fl=>{const out=[];let cur=[];const q2={},push=(x,z)=>{nearest(x,z,q2);if(q2.d<q2.hw-.6){if(cur.length>=4)out.push(cur);cur=[]}else cur.push(x,z)};
+      for(let k=0;k+3<fl.length;k+=2){const ax=fl[k],az=fl[k+1],bx=fl[k+2],bz=fl[k+3],n=Math.max(1,Math.ceil(Math.hypot(bx-ax,bz-az)/1.5));for(let t=0;t<n;t++)push(ax+(bx-ax)*t/n,az+(bz-az)*t/n)}
+      if(fl.length>=2)push(fl[fl.length-2],fl[fl.length-1]);if(cur.length>=4)out.push(cur);return out};
+    const streetRibbons=paved=>E.streets.filter(t=>!!t[1]===paved).flatMap(t=>clipStreet(t[2]).map(fl=>ribbon(fl,t[0]/10,.1,3,true)));
+    merge(streetRibbons(true),roadMat(Object.assign({map:roadTexture('street')},po)));
+    merge(streetRibbons(false),roadMat(Object.assign({map:roadTexture('gravel')},po)));
     merge(E.water.map(t=>ribbon(t[1],t[0]/2,.14,3)),new THREE.MeshLambertMaterial(Object.assign({color:0x3F82B2},po)));
     merge(E.rail.map(fl=>ribbon(fl,1.7,.14,3)),new THREE.MeshLambertMaterial(Object.assign({color:0x8B7D6B},po)));
     const railLines=[];for(const fl of E.rail){for(const off of[-.72,.72]){const o2=[];for(let k=0;k+1<fl.length;k+=2){const a=Math.max(0,k-2),b=Math.min(fl.length-2,k+2);let dx=fl[b]-fl[a],dz=fl[b+1]-fl[a+1];const l=Math.hypot(dx,dz)||1;o2.push(fl[k]-dz/l*off,fl[k+1]+dx/l*off)}railLines.push(ribbon(o2,.07,.3,3))}}
