@@ -33,13 +33,19 @@ Fontos: a sima „drag and drop” feltöltés (Netlify Drop) nem telepíti a sz
 
 - Minden név csak egyszer szerepelhet. A nevet az a böngésző birtokolja, ahol először megadták.
 - A szerver ellenőrzi a beküldött meneteket: reális-e az idő, a rajtnál kezdődik és a célnál ér-e véget, nincs-e benne ugrás.
-- Egy-egy bejegyzést a Netlify felületén, a projekt Blobs részében lehet törölni (`players`, `ghosts` és `daily` tároló).
+- Egy-egy bejegyzést a Netlify felületén, a projekt Blobs részében lehet törölni (`players`, `ghosts`, `daily` és `champ` tároló).
 
 ## Napi kihívás
 
 - Minden nap (budapesti idő szerint) egy szakasz és egy időjárás (napos, eső vagy alkony) a kihívás, mindenkinek ugyanaz. A játék és a szerver ugyanabból a dátumból, ugyanazzal a képlettel számolja.
 - `GET /api/daily`: a mai kihívás és a napi ranglista. `POST /api/daily`: napi idő beküldése; a szerver ugyanúgy ellenőrzi a menetet, mint a sima ranglistánál, és csak a mai (éjfél után még 6 óráig a tegnapi) kihívást fogadja el.
 - A napi idők a `daily` tárolóban vannak, `dátum/név` kulccsal.
+
+## Bajnokság
+
+- Az öt szakasz egymás után (Iklad napos, Domony eső, Aszód napos, Dunakeszi alkony, Fót éjszaka). Az ütközés sérülést okoz, a szakaszok között a szervizben időbüntetésért lehet javíttatni. Nincs újrakezdés, a szakasz közbeni kilépés feladás.
+- `GET /api/champ`: a bajnoki ranglista. `POST /api/champ`: mind az öt menet és a szervizbüntetések; a szerver minden menetet ugyanúgy ellenőriz, mint a sima ranglistánál, és a sorrendet is.
+- A bajnoki eredmények a `champ` tárolóban vannak, név szerinti kulccsal.
 
 ## Megosztás
 

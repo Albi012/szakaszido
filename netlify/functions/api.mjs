@@ -65,6 +65,14 @@ function validRun(stage, t, d, splits) {
   return null;
 }
 
+// Bajnokság: az öt valódi szakasz ebben a sorrendben; a szerviz időbüntetése szakaszonként legfeljebb 10 perc
+const CHAMP_STAGES = ["r_iklad", "r_domony", "r_aszod", "r_dunakeszi", "r_fot"];
+async function champBoard(champ) {
+  const { blobs } = await champ.list();
+  const out = await Promise.all(blobs.map((b) => champ.get(b.key, { type: "json" })));
+  return out.filter(Boolean).map((e) => ({ nick: e.nick, total: e.total, times: e.times, pen: e.pen, look: e.look || {} })).sort((a, b) => a.total - b.total);
+}
+
 async function dailyBoard(daily, date) {
   const { blobs } = await daily.list({ prefix: date + "/" });
   const out = await Promise.all(blobs.map((b) => daily.get(b.key, { type: "json" })));
@@ -88,6 +96,7 @@ export default async (req) => {
   const players = getStore({ name: "players", consistency: "strong" });
   const ghosts = getStore({ name: "ghosts", consistency: "strong" });
   const daily = getStore({ name: "daily", consistency: "strong" });
+  const champ = getStore({ name: "champ", consistency: "strong" });
 
   try {
     if (req.method === "GET" && route === "board") return json({ players: await board(players) });
@@ -96,6 +105,8 @@ export default async (req) => {
       const d = dailyFor(budapestDate(Date.now()));
       return json({ ...d, rows: await dailyBoard(daily, d.date) });
     }
+
+    if (req.method === "GET" && route === "champ") return json({ rows: await champBoard(champ) });
 
     if (req.method === "GET" && route === "ghost") {
       const stage = url.searchParams.get("stage"), nick = cleanNick(url.searchParams.get("nick"));
@@ -106,7 +117,7 @@ export default async (req) => {
 
     if (req.method !== "POST") return bad("Nem támogatott kérés.", 405);
     const len = Number(req.headers.get("content-length") || 0);
-    if (len > 400000) return bad("Túl nagy kérés.", 413);
+    if (len > (route === "champ" ? 1500000 : 400000)) return bad("Túl nagy kérés.", 413); // a bajnokság öt menetet visz
     let body;
     try { body = await req.json(); } catch { return bad("Hibás kérés."); }
     const nick = cleanNick(body.nick);
@@ -153,6 +164,28 @@ export default async (req) => {
       }
       await players.setJSON(key, p);
       return json({ ok: true, improved, players: await board(players) });
+    }
+
+    if (route === "champ") {
+      const { runs, pen } = body;
+      if (!Array.isArray(runs) || runs.length !== CHAMP_STAGES.length) return bad("Hiányos bajnokság.");
+      if (!Array.isArray(pen) || pen.length !== CHAMP_STAGES.length || !pen.every((v) => Number.isInteger(v) && v >= 0 && v <= 600000)) return bad("Hibás büntetések.");
+      for (let i = 0; i < runs.length; i++) {
+        const r = runs[i] || {};
+        if (r.stage !== CHAMP_STAGES[i]) return bad("A szakaszok sorrendje nem stimmel.");
+        const err = validRun(r.stage, r.t, r.d, r.splits);
+        if (err) return bad((i + 1) + ". szakasz: " + err);
+      }
+      const times = runs.map((r) => r.t), total = times.reduce((a, b) => a + b, 0) + pen.reduce((a, b) => a + b, 0);
+      const p = await ensure();
+      p.nick = nick;
+      p.look = cleanLook(body.look);
+      await players.setJSON(key, p);
+      const prev = await champ.get(key, { type: "json" });
+      const improved = !prev || total < prev.total;
+      if (improved) await champ.setJSON(key, { nick, total, times, pen, look: p.look, at: Date.now() });
+      const rows = await champBoard(champ);
+      return json({ ok: true, improved, total, rows, rank: rows.findIndex((r) => r.nick.toLowerCase() === nick.toLowerCase()) + 1 });
     }
 
     if (route === "daily") {
