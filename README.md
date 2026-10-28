@@ -33,13 +33,25 @@ Fontos: a sima „drag and drop” feltöltés (Netlify Drop) nem telepíti a sz
 
 - Minden név csak egyszer szerepelhet. A nevet az a böngésző birtokolja, ahol először megadták.
 - A szerver ellenőrzi a beküldött meneteket: reális-e az idő, a rajtnál kezdődik és a célnál ér-e véget, nincs-e benne ugrás.
-- Egy-egy bejegyzést a Netlify felületén, a projekt Blobs részében lehet törölni (`players`, `ghosts` és `daily` tároló).
+- Egy-egy bejegyzést a Netlify felületén, a projekt Blobs részében lehet törölni (`players`, `ghosts`, `daily` és `champ` tároló).
+
+## Körpályák
+
+- Minden településnek van körpályája (K1–K5) a falu valódi utcáin: a beégetett OSM-utcahálózatban talált zárt kör, a rövidebbeken több körrel (Iklad 6×460 m, Domony 4×610 m, Aszód 3×1021 m, Dunakeszi 4×615 m, Fót 2×1489 m).
+- A köröket egy egyszeri szkript választotta ki (utcagráf a metszéspontokból, a körök pontozása hossz, kerekség és a közeli házak száma szerint); az eredmény a `LOOPS` konstansban van, a szerver a kezdőpontot és a hosszt ismeri.
+- A szerver minden menetnél ellenőrzi, hogy a megtett út legalább a pálya hosszának 85%-a.
 
 ## Napi kihívás
 
 - Minden nap (budapesti idő szerint) egy szakasz és egy időjárás (napos, eső vagy alkony) a kihívás, mindenkinek ugyanaz. A játék és a szerver ugyanabból a dátumból, ugyanazzal a képlettel számolja.
 - `GET /api/daily`: a mai kihívás és a napi ranglista. `POST /api/daily`: napi idő beküldése; a szerver ugyanúgy ellenőrzi a menetet, mint a sima ranglistánál, és csak a mai (éjfél után még 6 óráig a tegnapi) kihívást fogadja el.
 - A napi idők a `daily` tárolóban vannak, `dátum/név` kulccsal.
+
+## Bajnokság
+
+- Az öt szakasz egymás után (Iklad napos, Domony eső, Aszód napos, Dunakeszi alkony, Fót éjszaka). Az ütközés sérülést okoz, a szakaszok között a szervizben időbüntetésért lehet javíttatni. Nincs újrakezdés, a szakasz közbeni kilépés feladás.
+- `GET /api/champ`: a bajnoki ranglista. `POST /api/champ`: mind az öt menet és a szervizbüntetések; a szerver minden menetet ugyanúgy ellenőriz, mint a sima ranglistánál, és a sorrendet is.
+- A bajnoki eredmények a `champ` tárolóban vannak, név szerinti kulccsal.
 
 ## Megosztás
 
