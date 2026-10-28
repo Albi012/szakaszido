@@ -5,7 +5,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 // Szakaszok: hossz (m) és a cél helye a játék koordinátáiban (a rajt a 0,0 pont)
 const STAGES = {"r_iklad": {"len": 2174, "end": [1097.7, 150.6]}, "r_domony": {"len": 2587, "end": [291.3, -233.5]}, "r_aszod": {"len": 2085, "end": [793.1, -185.6]}, "r_dunakeszi": {"len": 2458, "end": [670.6, 332.7]}, "r_fot": {"len": 2776, "end": [-594.9, -1442.0]}};
 // Körpályák: a rajt és a cél ugyanott van (a kör kezdőpontja), a hossz az összes kör együtt
-Object.assign(STAGES, {"k_iklad": {"len": 2760, "laps": 6, "start": [706.6, -14.3], "end": [706.6, -14.3]}, "k_domony": {"len": 2440, "laps": 4, "start": [816.9, 112.3], "end": [816.9, 112.3]}, "k_aszod": {"len": 3063, "laps": 3, "start": [-42.7, -176.3], "end": [-42.7, -176.3]}, "k_dunakeszi": {"len": 2460, "laps": 4, "start": [243.3, 399.3], "end": [243.3, 399.3]}, "k_fot": {"len": 2978, "laps": 2, "start": [-21.1, -527.5], "end": [-21.1, -527.5]}});
+Object.assign(STAGES, {"k_iklad": {"len": 6349, "laps": 1, "start": [70.0, -331.7], "end": [70.0, -331.7]}, "k_domony": {"len": 2440, "laps": 4, "start": [816.9, 112.3], "end": [816.9, 112.3]}, "k_aszod": {"len": 3063, "laps": 3, "start": [-42.7, -176.3], "end": [-42.7, -176.3]}});
 const MAX_PLAYERS = 500;
 
 // Napi kihívás: a budapesti dátumból számolt szakasz és körülmény (a játék ugyanezzel a képlettel számol)
@@ -68,7 +68,7 @@ function validRun(stage, t, d, splits) {
   let path = 0;
   for (let i = 3; i < d.length; i += 3) path += Math.hypot(d[i] - d[i - 3], d[i + 1] - d[i - 2]);
   if (path < st.len * 0.85) return "A menet rövidebb a pályánál.";
-  if (!Array.isArray(splits) || splits.length > (st.laps ? st.laps - 1 : 2) || !splits.every((v) => Number.isInteger(v) && v > 0 && v < t)) return "Hibás részidők.";
+  if (!Array.isArray(splits) || splits.length > (st.laps ? Math.max(2, st.laps - 1) : 2) || !splits.every((v) => Number.isInteger(v) && v > 0 && v < t)) return "Hibás részidők.";
   return null;
 }
 

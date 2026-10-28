@@ -1,6 +1,6 @@
 # Szakaszidő
 
-Böngészős rally időfutam Iklad, Domony, Aszód, Dunakeszi és Fót valódi utcáin, közös ranglistával.
+Böngészős rally időfutam Iklad, Domony, Aszód, Dunakeszi és Fót valódi utcáin, közös ranglistával, körpályákkal és drift arénával.
 
 ## Felépítés
 
@@ -37,9 +37,18 @@ Fontos: a sima „drag and drop” feltöltés (Netlify Drop) nem telepíti a sz
 
 ## Körpályák
 
-- Minden településnek van körpályája (K1–K5) a falu valódi utcáin: a beégetett OSM-utcahálózatban talált zárt kör, a rövidebbeken több körrel (Iklad 6×460 m, Domony 4×610 m, Aszód 3×1021 m, Dunakeszi 4×615 m, Fót 2×1489 m).
+- Iklad, Domony és Aszód körpályája (K1–K3) a falu valódi utcáin fut: a beégetett OSM-utcahálózatban talált leghosszabb zárt kör, a rövidebbeken több körrel (Iklad 1×6349 m, Domony 4×610 m, Aszód 3×1021 m).
+- Az ikladi nagy kör kb. harmada a beégetett térképrészleten kívül, a határban fut; ott a terep a domborzati rács széléhez igazodik, a fákat és fasorokat a játék generálja. Az egykörös pályán a szokásos két részidő van (a kör harmadánál és kétharmadánál).
+- Domonyban és Aszódon a beégetett adatokban nincs hosszabb zárt kör; hosszabbhoz újra le kellene tölteni a környék OSM-adatait.
 - A köröket egy egyszeri szkript választotta ki (utcagráf a metszéspontokból, a körök pontozása hossz, kerekség és a közeli házak száma szerint); az eredmény a `LOOPS` konstansban van, a szerver a kezdőpontot és a hosszt ismeri.
 - A szerver minden menetnél ellenőrzi, hogy a megtett út legalább a pálya hosszának 85%-a.
+
+## Drift aréna
+
+- A D1 Drift aréna szabad edzés: széles, zárt aszfaltkör füves szigettel, gumifallal és feldönthető bójákkal. Nincs cél és időkorlát, Esc-kel (szünet menü) lehet kilépni.
+- Pont a csúszásért jár: csúszási szög (10°-tól) × sebesség × szorzó, a szorzó két másodpercenként nő (legfeljebb ×5). A csúszás 0,6 s nyugalom után ér véget és íródik jóvá; ütközéskor vagy a pályáról lecsúszva a folyamatban lévő pont elvész.
+- Az arénában gázzal könnyebben kicsúszik az autó hátulja, így a drift gázzal tartható.
+- A legjobb pontszám és a leghosszabb csúszás játékosonként, az eszközön tárolódik; a szerverre nem kerül.
 
 ## Napi kihívás
 
